@@ -22,6 +22,7 @@
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
+const { flushSync } = ReactDOM;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const MAX_ITER  = 300;    // max steps before timeout
@@ -606,16 +607,23 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
             }
           }
           
-          setHoveredNode({ val, isStart, isInCycle, seq, outcome, passesThrough });
+          // Use flushSync to force immediate render
+          flushSync(() => {
+            setHoveredNode({ val, isStart, isInCycle, seq, outcome, passesThrough });
+          });
         } catch (err) {
           console.error('Error computing node info:', err);
           // Fallback to simple display
-          setHoveredNode({ val, isStart: false, isInCycle: false, seq: [val], outcome: 'unknown', passesThrough: [] });
+          flushSync(() => {
+            setHoveredNode({ val, isStart: false, isInCycle: false, seq: [val], outcome: 'unknown', passesThrough: [] });
+          });
         }
         return;
       }
     }
-    setHoveredNode(null);
+    flushSync(() => {
+      setHoveredNode(null);
+    });
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
