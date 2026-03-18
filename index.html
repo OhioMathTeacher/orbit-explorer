@@ -257,10 +257,9 @@ const OUTCOME_LABEL = {
 
 // ── App ──────────────────────────────────────────────────────────────────────
 function App() {
-  // Read URL params: ?m=5&a=1&d=2  locks the parameters
+  // Read URL params: ?m=5&a=1&d=2
   const sp = new URLSearchParams(window.location.search);
   const urlM = sp.get('m'), urlA = sp.get('a'), urlD = sp.get('d');
-  const startLocked = urlM !== null || urlA !== null || urlD !== null;
 
   const seed   = parseInt(sp.get('seed') ?? '27');
   const urlKey = sp.get('key') ?? '';
@@ -268,7 +267,6 @@ function App() {
   const [m, setM]           = useState(parseInt(urlM ?? '3'));
   const [a, setA]           = useState(parseInt(urlA ?? '-1'));
   const [d, setD]           = useState(parseInt(urlD ?? '2'));
-  const [locked, setLocked] = useState(startLocked);
   const [apiKey, setApiKey] = useState(() => {
     // Try URL first, then localStorage, then empty
     return urlKey || localStorage.getItem('openrouter_key') || '';
@@ -645,32 +643,22 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
           {ruleText}
         </span>
 
-        {/* Parameter sliders — visible when unlocked */}
-        {!locked && (
-          <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-            {[
-              ['m', m, v => changeParam(setM, v), 1, 9],
-              ['a', a, v => changeParam(setA, v), -9, 9],
-              ['d', d, v => changeParam(setD, v), 2, 9],
-            ].map(([label, val, setter, min, max]) => (
-              <label key={label} style={{ fontSize: 13, display: 'flex', gap: 5, alignItems: 'center' }}>
-                <span style={{ color: '#7aaaf0', minWidth: 18 }}>{label} =</span>
-                <input type="range" min={min} max={max} value={val}
-                  onChange={e => setter(parseInt(e.target.value))}
-                  style={{ width: 72 }} />
-                <span style={{ color: 'white', minWidth: 22 }}>{val}</span>
-              </label>
-            ))}
-          </div>
-        )}
-
-        {/* Lock toggle */}
-        <button onClick={() => setLocked(l => !l)} style={{
-          background: '#1a2d55', border: '1px solid #3355aa',
-          color: '#aac4ff', padding: '3px 11px', borderRadius: 4, fontSize: 12,
-        }}>
-          {locked ? '🔒 Locked' : '🔓 Unlocked'}
-        </button>
+        {/* Parameter sliders */}
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+          {[
+            ['m', m, v => changeParam(setM, v), 1, 9],
+            ['a', a, v => changeParam(setA, v), -9, 9],
+            ['d', d, v => changeParam(setD, v), 2, 9],
+          ].map(([label, val, setter, min, max]) => (
+            <label key={label} style={{ fontSize: 13, display: 'flex', gap: 5, alignItems: 'center' }}>
+              <span style={{ color: '#7aaaf0', minWidth: 18 }}>{label} =</span>
+              <input type="range" min={min} max={max} value={val}
+                onChange={e => setter(parseInt(e.target.value))}
+                style={{ width: 72 }} />
+              <span style={{ color: 'white', minWidth: 22 }}>{val}</span>
+            </label>
+          ))}
+        </div>
 
         {/* Add number input */}
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -986,11 +974,10 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
           Color: green = small values → red = large.
           &nbsp;Yellow glow = cycle node.
           &nbsp;Enter a starting value and press Add # or ↵.
-          {locked && '  ·  Parameters locked by instructor — explore freely.'}
-          {!locked && '  ·  Parameters unlocked — changing them clears the graph.'}
+          &nbsp;Changing parameters clears the graph.
         </span>
         <span style={{ color: '#445577' }}>
-          m={m} &nbsp;|&nbsp; a={a} &nbsp;|&nbsp; d=2 (fixed)
+          m={m} &nbsp;|&nbsp; a={a} &nbsp;|&nbsp; d={d}
         </span>
       </div>
     </div>
