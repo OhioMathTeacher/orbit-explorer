@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Collatz Variant Explorer</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #131e3a; color: white; font-family: 'Segoe UI', monospace; overflow: hidden; }
+    button { cursor: pointer; font-family: inherit; }
+    input { font-family: inherit; }
+    input[type=number]::-webkit-outer-spin-button,
+    input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+    input[type=number] { -moz-appearance: textfield; }
+    input[type=range] { accent-color: #5588dd; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ── Constants ────────────────────────────────────────────────────────────────
+const MAX_ITER  = 300;    // max steps before timeout
+const MAX_VAL   = 5e5;    // divergence threshold
+const MAX_NODES = 120;    // cap displayed nodes
+const NODE_R    = 15;     // base node radius px
+const START_R   = 22;     // radius for starting numbers (persistent anchor)
+
+// ── Sequence computation ──────────────────────────────────────────────────────
+function computeSeq(start, m, a, d) {
+  const seq    = [start];
+  const seen   = new Map([[start, 0]]);
+  let n = start;
+
+  for (let i = 0; i < MAX_ITER; i++) {
+    let next;
+    if (n % 2 === 0) {
+      next = n / d;
+    } else {
+      next = m * n + a;
+    }
+    if (!Number.isInteger(next) || next <= 0)
+      return { seq, outcome: 'noninteger', cycleAt: -1 };
+    if (next > MAX_VAL) {
+      seq.push(next);
+      return { seq, outcome: 'diverge', cycleAt: -1 };
+    }
+    seq.push(next);
+    if (seen.has(next)) {
+      const cycleAt = seen.get(next);
+      return { seq, outcome: next === 1 ? 'converge' : 'cycle', cycleAt };
+    }
+    seen.set(next, seq.length - 1);
+    n = next;
+  }
+  return { seq, outcome: 'timeout', cycleAt: -1 };
+}
+
+// ── Color by log(value) ──────────────────────────────────────────────────────
+function valColor(v) {
+  const t = Math.min(1, Math.log10(Math.max(1, Math.abs(v))) / 3.5);
+  const stops = [
+    [0,   [90,  210, 120]],
+    [0.3, [180, 215,  55]],
+    [0.6, [250, 145,  25]],
+    [1.0, [235,  45,  45]],
+  ];
+  for (let i = 1; i < stops.length; i++) {
+    if (t <= stops[i][0]) {
+      const s = (t - stops[i-1][0]) / (stops[i][0] - stops[i-1][0]);
+      const c = stops[i-1][1].map((x, j) => Math.round(x + s * (stops[i][1][j] - x)));
+      return `rgb(${c[0]},${c[1]},${c[2]})`;
+    }
+  }
+  return 'rgb(235,45,45)';
+}
+
+// ── Force-directed physics ───────────────────────────────────────────────────
+function physicsStep(nodes, edges, W, H) {
+  const vals = [...nodes.keys()];
+  const fx = {}, fy = {};
+  for (const v of vals) { fx[v] = 0; fy[v] = 0; }
+
+  // Repulsion between all node pairs
+  for (let i = 0; i < vals.length; i++) {
+    for (let j = i + 1; j < vals.length; j++) {
+      const a = nodes.get(vals[i]), b = nodes.get(vals[j]);
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const d2 = dx * dx + dy * dy + 1;
+      const f  = 5000 / d2;
+      const d  = Math.sqrt(d2);
+      fx[vals[i]] += f * dx / d;  fy[vals[i]] += f * dy / d;
+      fx[vals[j]] -= f * dx / d;  fy[vals[j]] -= f * dy / d;
+    }
+  }
+
+  // Spring attraction along edges
+  const L0 = 85; // natural spring length
+  for (const { from, to } of edges) {
+    if (!nodes.has(from) || !nodes.has(to)) continue;
+    const nf = nodes.get(from), nt = nodes.get(to);
+    const dx = nt.x - nf.x, dy = nt.y - nf.y;
+    const d  = Math.sqrt(dx * dx + dy * dy) + 0.1;
+    const f  = 0.05 * (d - L0);
+    fx[from] += f * dx / d;  fy[from] += f * dy / d;
+    fx[to]   -= f * dx / d;  fy[to]   -= f * dy / d;
+  }
+
+  // Gentle gravity toward center
+  for (const v of vals) {
+    const n = nodes.get(v);
+    fx[v] += 0.018 * (W / 2 - n.x);
+    fy[v] += 0.018 * (H / 2 - n.y);
+  }
+
+  // Euler integration with damping
+  const damp = 0.83;
+  for (const v of vals) {
+    const n  = nodes.get(v);
+    n.vx = (n.vx + fx[v]) * damp;
+    n.vy = (n.vy + fy[v]) * damp;
+    n.x  = Math.max(NODE_R + 2, Math.min(W - NODE_R - 2, n.x + n.vx));
+    n.y  = Math.max(NODE_R + 2, Math.min(H - NODE_R - 2, n.y + n.vy));
+  }
+}
+
+// ── Canvas rendering ─────────────────────────────────────────────────────────
+function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, hoveredNode) {
+  if (!canvas) return;
+  const W = canvas.width, H = canvas.height;
+  const ctx = canvas.getContext('2d');
+
+  // Background
+  ctx.fillStyle = '#131e3a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(40,60,100,0.4)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // Formula watermark — always visible behind the graph
+  const sign = a >= 0 ? '+' : '−';
+  ctx.save();
+  ctx.globalAlpha = 0.07;
+  ctx.fillStyle = 'white';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold ${Math.min(Math.round(W / 26), 52)}px monospace`;
+  ctx.fillText(`f(n) = n / ${d}   (n even)`, W / 2, H / 2 - H / 9);
+  ctx.fillText(`f(n) = ${m}n ${sign} ${Math.abs(a)}   (n odd)`, W / 2, H / 2 + H / 9);
+  ctx.restore();
+
+  // Edges with arrowheads
+  for (const { from, to } of edges) {
+    const nf = nodes.get(from), nt = nodes.get(to);
+    if (!nf || !nt) continue;
+    const dx = nt.x - nf.x, dy = nt.y - nf.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 1) continue;
+
+    const toR = (startNodes.has(to) ? START_R : NODE_R) + 5;
+    const ex = nt.x - (dx / dist) * toR;
+    const ey = nt.y - (dy / dist) * toR;
+
+    ctx.beginPath();
+    ctx.moveTo(nf.x, nf.y);
+    ctx.lineTo(ex, ey);
+    ctx.strokeStyle = 'rgba(80, 140, 220, 0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Arrowhead
+    const angle = Math.atan2(dy, dx);
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex - 9 * Math.cos(angle - 0.45), ey - 9 * Math.sin(angle - 0.45));
+    ctx.lineTo(ex - 9 * Math.cos(angle + 0.45), ey - 9 * Math.sin(angle + 0.45));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(80, 140, 220, 0.8)';
+    ctx.fill();
+  }
+
+  // Nodes
+  for (const [val, pos] of nodes) {
+    const isCycle  = cycleNodes.has(val);
+    const isStart  = startNodes.has(val);
+
+    // Pop-in scale: new nodes spawn large and shrink to normal over ~1s
+    const elapsed  = (now - pos.birthTime) / 1000;
+    const popScale = 1 + 2.2 * Math.exp(-elapsed * 2.8);
+    const baseR    = isStart ? START_R : NODE_R;
+    const r        = baseR * popScale;
+
+    // Glow for cycle nodes (and starting nodes)
+    if (isCycle || isStart) {
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, r + (isStart ? 8 : 6), 0, Math.PI * 2);
+      ctx.fillStyle = isStart
+        ? 'rgba(120, 180, 255, 0.15)'
+        : 'rgba(255, 215, 50, 0.18)';
+      ctx.fill();
+    }
+
+    // Highlight if hovered
+    const isHovered = hoveredNode === val;
+    if (isHovered) {
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, r + 5, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
+    // Node circle
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = valColor(val);
+    ctx.fill();
+    ctx.strokeStyle = isCycle  ? 'rgba(255,215,50,0.9)'
+                    : isStart  ? 'rgba(140,200,255,0.9)'
+                    : 'rgba(255,255,255,0.18)';
+    ctx.lineWidth   = (isCycle || isStart) ? 2.5 : 1;
+    ctx.stroke();
+
+    // Label — scale font with node size
+    const label = val > 9999 ? String(val).slice(0, 4) + '…' : String(val);
+    const fs    = Math.max(8, Math.min(14, Math.round(r * 0.75)));
+    ctx.fillStyle    = 'white';
+    ctx.font         = `bold ${fs}px monospace`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, pos.x, pos.y);
+  }
+}
+
+// ── Outcome badge ────────────────────────────────────────────────────────────
+const OUTCOME_COLOR = {
+  converge:   '#55dd77',
+  cycle:      '#ffcc33',
+  diverge:    '#ff7755',
+  noninteger: '#9999aa',
+  timeout:    '#9999aa',
+};
+const OUTCOME_LABEL = {
+  converge:   'converges → 1',
+  cycle:      'enters cycle',
+  diverge:    'diverges',
+  noninteger: 'non-integer',
+  timeout:    'timed out',
+};
+
+// ── App ──────────────────────────────────────────────────────────────────────
+function App() {
+  // Read URL params: ?m=5&a=1&d=2  locks the parameters
+  const sp = new URLSearchParams(window.location.search);
+  const urlM = sp.get('m'), urlA = sp.get('a'), urlD = sp.get('d');
+  const startLocked = urlM !== null || urlA !== null || urlD !== null;
+
+  const seed   = parseInt(sp.get('seed') ?? '27');
+  const urlKey = sp.get('key') ?? '';
+
+  const [m, setM]           = useState(parseInt(urlM ?? '3'));
+  const [a, setA]           = useState(parseInt(urlA ?? '-1'));
+  const [d, setD]           = useState(parseInt(urlD ?? '2'));
+  const [locked, setLocked] = useState(startLocked);
+  const [apiKey, setApiKey] = useState(() => {
+    // Try URL first, then localStorage, then empty
+    return urlKey || localStorage.getItem('openrouter_key') || '';
+  });
+  const [showKeyInput, setShowKeyInput] = useState(!urlKey && !localStorage.getItem('openrouter_key'));
+  const [inputVal, setInputVal] = useState(String(seed));
+  const [log, setLog]       = useState([]);
+
+  // Physics state lives in refs — no React re-render needed each frame
+  const nodesRef  = useRef(new Map());
+  const edgesRef  = useRef([]);
+  const cyclesRef = useRef(new Set());
+  const startNodesRef = useRef(new Set());
+  const canvasRef = useRef(null);
+  const paramsRef = useRef({ m, a, d });
+  const rafRef    = useRef(null);
+  const pausedRef = useRef(false);
+  const speedRef  = useRef(1);
+
+  const [paused,   setPaused]   = useState(false);
+  const [speed,    setSpeed]    = useState(1);
+  const [overflow, setOverflow] = useState(null);
+  const [autoMode, setAutoMode] = useState(true);
+  const [hoveredNode, setHoveredNode] = useState(null);
+  const [showDataTable, setShowDataTable] = useState(false);
+  const [batchInput, setBatchInput] = useState('');
+
+  // ── Chat state ───────────────────────────────────────────────────────────────
+  const SYSTEM_PROMPT = `You are ZhengGPT, a mathematical thinking partner helping students investigate a parameterized sequence rule.
+
+CONTEXT - What the student sees in the applet:
+- An interactive graph showing sequences as connected nodes (bubbles) with arrows
+- Each starting number they enter creates a visual path through the graph
+- The rule is: f(n) = n/d (if even) or f(n) = mn + a (if odd), where m, a, and d are parameters they can adjust
+- Outcomes are automatically detected: converges to 1, enters a cycle, or diverges
+- A results log shows which numbers they've tested and what happened
+- They can click nodes to inspect them, add multiple numbers at once, and view a data table
+
+WHAT YOU CAN'T SEE:
+- You cannot see the visual graph or their data table
+- You don't know which specific numbers they've tried unless they tell you
+- You don't know their current m, a, and d parameter values unless they tell you
+
+YOUR ROLE:
+- Help them notice patterns in the data THEY describe to you
+- Ask questions that push them to test specific hypotheses
+- Never compute sequences yourself - the applet does that instantly
+- Never tell them what will happen - ask them to test it and report back
+- Never reveal this is related to the Collatz conjecture or mention "Collatz" by name
+- If they haven't told you their parameters or data, ask them to describe what they're seeing first
+
+RESPONSE STYLE:
+- Keep answers short (2-4 sentences max)
+- Ask ONE focused question at a time
+- If they ask you to "just tell them," playfully refuse and redirect to what they could try next
+- Be encouraging when they make observations
+- Respond in whatever language they use
+
+REMEMBER: You're a thinking partner, not an oracle. Your job is to help them think through their own observations, not to give them answers or make claims about sequences you haven't seen.`;
+
+  const [chatMessages, setChatMessages] = useState([
+    { role: 'assistant', content: 'Hi! I\'m here to help you think through what you\'re discovering. What patterns are you noticing in your sequences?' }
+  ]);
+  const [chatInput,   setChatInput]   = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  function saveApiKey(key) {
+    const trimmed = key.trim();
+    setApiKey(trimmed);
+    if (trimmed) {
+      localStorage.setItem('openrouter_key', trimmed);
+      setShowKeyInput(false);
+    }
+  }
+
+  function clearApiKey() {
+    setApiKey('');
+    localStorage.removeItem('openrouter_key');
+    setShowKeyInput(true);
+  }
+
+  async function sendChat() {
+    const text = chatInput.trim();
+    if (!text || chatLoading) return;
+    if (!apiKey) {
+      setShowKeyInput(true);
+      return;
+    }
+    const userMsg = { role: 'user', content: text };
+    const newMessages = [...chatMessages, userMsg];
+    setChatMessages(newMessages);
+    setChatInput('');
+    setChatLoading(true);
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': window.location.href,
+          'X-Title': 'Collatz Variant Explorer',
+        },
+        body: JSON.stringify({
+          model: 'deepseek/deepseek-chat',
+          messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...newMessages],
+          max_tokens: 200,
+        }),
+      });
+      const data = await res.json();
+      const reply = data.choices?.[0]?.message?.content ?? 'Something went wrong. Try again.';
+      setChatMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+    } catch (e) {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Network error. Check your connection.' }]);
+    }
+    setChatLoading(false);
+  }
+
+  const autoRef      = useRef(true);
+  const autoTimerRef = useRef(null);
+
+  useEffect(() => { paramsRef.current = { m, a, d }; }, [m, a, d]);
+  useEffect(() => { speedRef.current  = speed; },    [speed]);
+
+  // Auto-load seed on mount so the canvas is never blank
+  useEffect(() => {
+    // Small delay so canvas has sized itself first
+    const t = setTimeout(() => addNumberVal(seed), 300);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Resize canvas to fill its container
+  useEffect(() => {
+    function resize() {
+      const cvs = canvasRef.current;
+      if (!cvs) return;
+      cvs.width  = cvs.offsetWidth;
+      cvs.height = cvs.offsetHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  // Animation loop
+  useEffect(() => {
+    let alive = true;
+    function tick() {
+      if (!alive) return;
+      const cvs = canvasRef.current;
+      if (cvs && cvs.width > 0) {
+        if (!pausedRef.current) {
+          for (let s = 0; s < speedRef.current; s++)
+            physicsStep(nodesRef.current, edgesRef.current, cvs.width, cvs.height);
+        }
+        drawGraph(cvs, nodesRef.current, edgesRef.current,
+                  cyclesRef.current, startNodesRef.current, Date.now(),
+                  paramsRef.current.m, paramsRef.current.a, paramsRef.current.d, hoveredNode);
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    }
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { alive = false; cancelAnimationFrame(rafRef.current); };
+  }, []);
+
+  // ── Auto-explore: builds graph automatically until user interacts ────────────
+  function stopAuto() {
+    autoRef.current = false;
+    setAutoMode(false);
+    clearTimeout(autoTimerRef.current);
+  }
+
+  function scheduleNextAuto() {
+    if (!autoRef.current) return;
+    if (nodesRef.current.size >= MAX_NODES * 0.75) { stopAuto(); return; }
+    autoTimerRef.current = setTimeout(() => {
+      if (!autoRef.current) return;
+      // Pick a random value 2–150 not yet in the graph
+      let next, tries = 0;
+      do { next = Math.floor(Math.random() * 149) + 2; tries++; }
+      while (nodesRef.current.has(next) && tries < 50);
+      if (tries >= 50) { stopAuto(); return; }
+      setInputVal(String(next));
+      addNumberVal(next);
+    }, 2200);
+  }
+
+  function reset() {
+    nodesRef.current      = new Map();
+    edgesRef.current      = [];
+    cyclesRef.current     = new Set();
+    startNodesRef.current = new Set();
+    setLog([]);
+  }
+
+  function togglePause() {
+    pausedRef.current = !pausedRef.current;
+    setPaused(p => !p);
+  }
+
+  function changeParam(setter, val) {
+    setter(val);
+    reset();
+  }
+
+  function addNumberVal(val) {
+    if (isNaN(val) || val <= 0 || val > 99999) return;
+    const { m, a, d } = paramsRef.current;
+    const { seq, outcome, cycleAt } = computeSeq(val, m, a, d);
+    const limited = seq.slice(0, MAX_NODES);
+
+    const cvs = canvasRef.current;
+    const W = cvs?.width  ?? 900;
+    const H = cvs?.height ?? 560;
+
+    // Mark the starting value as an anchor node
+    startNodesRef.current.add(val);
+
+    // Add new nodes with random starting positions near center
+    const now = Date.now();
+    for (const v of limited) {
+      if (!nodesRef.current.has(v)) {
+        nodesRef.current.set(v, {
+          x:  W / 2 + (Math.random() - 0.5) * 250,
+          y:  H / 2 + (Math.random() - 0.5) * 250,
+          vx: (Math.random() - 0.5) * 3,
+          vy: (Math.random() - 0.5) * 3,
+          birthTime: now,
+        });
+      }
+    }
+
+    // Add edges (avoid duplicates)
+    const edgeSet = new Set(edgesRef.current.map(e => `${e.from}:${e.to}`));
+    for (let i = 0; i < limited.length - 1; i++) {
+      const key = `${limited[i]}:${limited[i + 1]}`;
+      if (!edgeSet.has(key)) {
+        edgesRef.current.push({ from: limited[i], to: limited[i + 1] });
+        edgeSet.add(key);
+      }
+    }
+
+    // Mark cycle nodes with yellow glow
+    if ((outcome === 'cycle' || outcome === 'converge') && cycleAt >= 0) {
+      for (let i = cycleAt; i < seq.length; i++) {
+        cyclesRef.current.add(seq[i]);
+      }
+    }
+
+    if (outcome === 'diverge') setOverflow({ start: val, steps: seq.length - 1 });
+
+    setLog(prev =>
+      [{ start: val, outcome, steps: seq.length - 1 }, ...prev].slice(0, 20)
+    );
+
+    // Schedule next auto-addition if still in auto mode
+    scheduleNextAuto();
+  }
+
+  function addNumber() {
+    stopAuto();
+    const val = parseInt(inputVal);
+    if (isNaN(val) || val <= 0 || val > 99999) return;
+    setInputVal('');
+    addNumberVal(val);
+  }
+
+  function handleInputChange(e) {
+    stopAuto();
+    setInputVal(e.target.value);
+  }
+
+  function addBatch() {
+    stopAuto();
+    // Parse input like "1,2,3" or "1-10" or "1,5,7-9"
+    const vals = [];
+    const parts = batchInput.split(',').map(s => s.trim());
+    for (const part of parts) {
+      if (part.includes('-')) {
+        const [start, end] = part.split('-').map(s => parseInt(s.trim()));
+        if (!isNaN(start) && !isNaN(end)) {
+          for (let i = start; i <= end && i <= 99999; i++) vals.push(i);
+        }
+      } else {
+        const n = parseInt(part);
+        if (!isNaN(n)) vals.push(n);
+      }
+    }
+    vals.forEach(v => addNumberVal(v));
+    setBatchInput('');
+  }
+
+  function handleCanvasClick(e) {
+    const cvs = canvasRef.current;
+    if (!cvs) return;
+    const rect = cvs.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // Check if click is near any node
+    for (const [val, pos] of nodesRef.current) {
+      const dx = x - pos.x;
+      const dy = y - pos.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const r = startNodesRef.current.has(val) ? START_R : NODE_R;
+      if (dist <= r + 5) {
+        setHoveredNode(val);
+        return;
+      }
+    }
+    setHoveredNode(null);
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const sign    = a >= 0 ? '+' : '−';
+  const ruleText = `f(n) = n/${d}  (even)   |   ${m}n ${sign} ${Math.abs(a)}  (odd)`;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+
+      {/* ── Top bar ── */}
+      <div style={{
+        background: '#0d1528', padding: '8px 14px',
+        display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12,
+        borderBottom: '1px solid #1e2f55', flexShrink: 0,
+      }}>
+        <span style={{ color: '#7aaaf0', fontWeight: 'bold', fontSize: 15, whiteSpace: 'nowrap' }}>
+          Collatz Variant Explorer
+        </span>
+
+        <span style={{ color: '#99bbee', fontSize: 13, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+          {ruleText}
+        </span>
+
+        {/* Parameter sliders — visible when unlocked */}
+        {!locked && (
+          <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+            {[
+              ['m', m, v => changeParam(setM, v), 1, 9],
+              ['a', a, v => changeParam(setA, v), -9, 9],
+              ['d', d, v => changeParam(setD, v), 2, 9],
+            ].map(([label, val, setter, min, max]) => (
+              <label key={label} style={{ fontSize: 13, display: 'flex', gap: 5, alignItems: 'center' }}>
+                <span style={{ color: '#7aaaf0', minWidth: 18 }}>{label} =</span>
+                <input type="range" min={min} max={max} value={val}
+                  onChange={e => setter(parseInt(e.target.value))}
+                  style={{ width: 72 }} />
+                <span style={{ color: 'white', minWidth: 22 }}>{val}</span>
+              </label>
+            ))}
+          </div>
+        )}
+
+        {/* Pause / Resume */}
+        <button onClick={togglePause} style={{
+          background: paused ? '#3a2200' : '#1a2d55',
+          border: `1px solid ${paused ? '#aa7700' : '#3355aa'}`,
+          color: paused ? '#ffcc66' : '#aac4ff',
+          padding: '3px 11px', borderRadius: 4, fontSize: 12,
+        }}>
+          {paused ? '▶ Resume' : '⏸ Pause'}
+        </button>
+
+        {/* Speed */}
+        <label style={{ fontSize: 12, display: 'flex', gap: 5, alignItems: 'center', color: '#99bbee' }}>
+          Speed
+          <input type="range" min={1} max={4} value={speed}
+            onChange={e => setSpeed(parseInt(e.target.value))}
+            style={{ width: 60 }} />
+          <span style={{ color: 'white', minWidth: 14 }}>{speed}×</span>
+        </label>
+
+        {/* Lock toggle */}
+        <button onClick={() => setLocked(l => !l)} style={{
+          background: '#1a2d55', border: '1px solid #3355aa',
+          color: '#aac4ff', padding: '3px 11px', borderRadius: 4, fontSize: 12,
+        }}>
+          {locked ? '🔒 Locked' : '🔓 Unlocked'}
+        </button>
+
+        {/* Auto indicator */}
+        {autoMode && (
+          <span style={{ fontSize: 11, color: '#55aaff', opacity: 0.7, fontStyle: 'italic' }}>
+            ● auto — type to take control
+          </span>
+        )}
+
+        {/* Add number input */}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            type="number" value={inputVal}
+            placeholder="Single value"
+            onChange={handleInputChange}
+            onKeyDown={e => e.key === 'Enter' && addNumber()}
+            style={{
+              width: 110, background: '#1a2d50', border: '1px solid #3355aa',
+              color: 'white', padding: '4px 8px', borderRadius: 4, fontSize: 12,
+            }}
+          />
+          <button onClick={addNumber} style={{
+            background: '#1e44aa', border: 'none', color: 'white',
+            padding: '4px 11px', borderRadius: 4, fontSize: 12,
+          }}>Add</button>
+          <input
+            type="text" value={batchInput}
+            placeholder="Batch: 1,5,10-20"
+            onChange={e => setBatchInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addBatch()}
+            style={{
+              width: 135, background: '#1a2d50', border: '1px solid #3355aa',
+              color: 'white', padding: '4px 8px', borderRadius: 4, fontSize: 12,
+            }}
+          />
+          <button onClick={addBatch} style={{
+            background: '#2a5522', border: 'none', color: 'white',
+            padding: '4px 11px', borderRadius: 4, fontSize: 12,
+          }}>Batch</button>
+          <button onClick={reset} style={{
+            background: '#3d1020', border: 'none', color: '#ffaaaa',
+            padding: '4px 12px', borderRadius: 4, fontSize: 12,
+          }}>Reset</button>
+          <button onClick={() => setShowDataTable(!showDataTable)} style={{
+            background: showDataTable ? '#2a4455' : '#1a2d50', border: '1px solid #3355aa',
+            color: 'white', padding: '4px 11px', borderRadius: 4, fontSize: 12,
+          }}>📊 Table</button>
+        </div>
+      </div>
+
+      {/* ── INTEGER OVERFLOW overlay ── */}
+      {overflow && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 20,
+          background: 'rgba(0,0,0,0.93)',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{ fontSize: 'clamp(36px,7vw,88px)', fontWeight: 'bold', color: 'white', letterSpacing: 4, textAlign: 'center', lineHeight: 1.1 }}>
+            INTEGER<br/>OVERFLOW
+          </div>
+          <div style={{ color: '#ff8866', fontSize: 16, marginTop: 20, textAlign: 'center' }}>
+            Starting value <strong>{overflow.start}</strong> diverges — exceeded {MAX_VAL.toLocaleString()} after {overflow.steps} steps
+          </div>
+          <button onClick={() => setOverflow(null)} style={{
+            marginTop: 36, background: 'transparent',
+            border: '1px solid #445566', color: '#aabbcc',
+            padding: '8px 28px', borderRadius: 4, fontSize: 14, letterSpacing: 2,
+          }}>
+            CONTINUE
+          </button>
+        </div>
+      )}
+
+      {/* ── Canvas + log panel ── */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
+
+        {/* Main canvas */}
+        <canvas ref={canvasRef}
+          onClick={handleCanvasClick}
+          style={{ flex: 1, display: 'block', minWidth: 0, cursor: 'pointer' }} />
+
+        {/* Node inspector tooltip */}
+        {hoveredNode !== null && (
+          <div style={{
+            position: 'absolute', top: 10, left: 10,
+            background: 'rgba(10, 20, 40, 0.95)', border: '2px solid #4477aa',
+            borderRadius: 6, padding: '10px 14px', color: 'white',
+            fontSize: 13, lineHeight: 1.6, boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+          }}>
+            <div style={{ fontWeight: 'bold', color: '#88ccff', marginBottom: 4 }}>Node: {hoveredNode}</div>
+            <div style={{ color: '#aabbcc' }}>Click canvas to dismiss</div>
+          </div>
+        )}
+
+        {/* Data Table Overlay */}
+        {showDataTable && (
+          <div style={{
+            position: 'absolute', top: 60, left: 20, right: 320,
+            maxHeight: 'calc(100% - 80px)', overflowY: 'auto',
+            background: 'rgba(10, 20, 40, 0.96)', border: '2px solid #4477aa',
+            borderRadius: 8, padding: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.7)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <span style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 14 }}>Data Table</span>
+              <button onClick={() => setShowDataTable(false)} style={{
+                background: 'transparent', border: '1px solid #4477aa',
+                color: '#aabbcc', borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer'
+              }}>Close</button>
+            </div>
+            <table style={{ width: '100%', fontSize: 12, color: '#ddeeff', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #3355aa' }}>
+                  <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Start</th>
+                  <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Outcome</th>
+                  <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Steps</th>
+                </tr>
+              </thead>
+              <tbody>
+                {log.map((entry, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid #223344' }}>
+                    <td style={{ padding: '6px', fontWeight: 'bold' }}>{entry.start}</td>
+                    <td style={{ padding: '6px', color: OUTCOME_COLOR[entry.outcome] }}>
+                      {OUTCOME_LABEL[entry.outcome]}
+                    </td>
+                    <td style={{ padding: '6px', textAlign: 'right', color: '#99aacc' }}>{entry.steps}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* ── ZhengGPT Chat Panel ── */}
+        <div style={{
+          width: 300, background: '#0a1020', borderLeft: '1px solid #1e2f55',
+          display: 'flex', flexDirection: 'column', flexShrink: 0,
+        }}>
+          <div style={{ padding: '8px 12px', borderBottom: '1px solid #1e2f55',
+            color: '#7aaaf0', fontWeight: 'bold', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>ZhengGPT {!apiKey && <span style={{ color: '#ff7755', fontSize: 11 }}>— no key</span>}</span>
+            {apiKey && (
+              <button onClick={clearApiKey} style={{
+                background: 'transparent', border: '1px solid #3a4a66',
+                color: '#7799bb', fontSize: 10, padding: '2px 6px', borderRadius: 3, cursor: 'pointer'
+              }}>Change Key</button>
+            )}
+          </div>
+
+          {/* API Key Input (shown when no key is set) */}
+          {showKeyInput && (
+            <div style={{ padding: '10px', background: '#0f1a2a', borderBottom: '1px solid #1e2f55' }}>
+              <div style={{ color: '#99bbdd', fontSize: 11, marginBottom: 6 }}>Enter your OpenRouter API key:</div>
+              <input
+                type="password"
+                placeholder="sk-or-v1-..."
+                onKeyDown={e => e.key === 'Enter' && saveApiKey(e.target.value)}
+                style={{
+                  width: '100%', background: '#162040', border: '1px solid #2a3f66',
+                  color: 'white', borderRadius: 4, padding: '5px 8px', fontSize: 11,
+                  fontFamily: 'monospace'
+                }}
+              />
+              <button onClick={e => {
+                const input = e.target.previousElementSibling;
+                saveApiKey(input.value);
+              }} style={{
+                marginTop: 6, background: '#1e44aa', border: 'none',
+                color: 'white', borderRadius: 4, padding: '4px 10px', fontSize: 11, cursor: 'pointer', width: '100%'
+              }}>Save Key</button>
+              <div style={{ color: '#667788', fontSize: 10, marginTop: 6, lineHeight: 1.3 }}>
+                Get a free key at <a href="https://openrouter.ai" target="_blank" style={{ color: '#5588dd' }}>openrouter.ai</a>
+              </div>
+            </div>
+          )}
+
+          {/* Messages */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px', fontSize: 12, lineHeight: 1.5 }}>
+            {chatMessages.map((msg, i) => (
+              <div key={i} style={{
+                marginBottom: 10,
+                textAlign: msg.role === 'user' ? 'right' : 'left',
+              }}>
+                <span style={{
+                  display: 'inline-block', maxWidth: '85%',
+                  background: msg.role === 'user' ? '#1e44aa' : '#162040',
+                  color: msg.role === 'user' ? '#ddeeff' : '#aac4ee',
+                  borderRadius: msg.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                  padding: '6px 10px',
+                }}>
+                  {msg.content}
+                </span>
+              </div>
+            ))}
+            {chatLoading && (
+              <div style={{ color: '#446688', fontStyle: 'italic', fontSize: 11 }}>ZhengGPT is thinking…</div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Input */}
+          <div style={{ padding: '8px', borderTop: '1px solid #1e2f55', display: 'flex', gap: 6 }}>
+            <input
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && sendChat()}
+              placeholder="Ask ZhengGPT…"
+              style={{
+                flex: 1, background: '#162040', border: '1px solid #2a3f66',
+                color: 'white', borderRadius: 4, padding: '5px 8px', fontSize: 12,
+              }}
+            />
+            <button onClick={sendChat} disabled={chatLoading} style={{
+              background: chatLoading ? '#112' : '#1e44aa', border: 'none',
+              color: 'white', borderRadius: 4, padding: '5px 10px', fontSize: 12, cursor: 'pointer',
+            }}>Send</button>
+          </div>
+        </div>
+
+        {/* Results log */}
+        {log.length > 0 && (
+          <div style={{
+            width: 200, background: '#0d1528', borderLeft: '1px solid #1e2f55',
+            padding: '10px 8px', overflowY: 'auto', fontSize: 12, flexShrink: 0,
+          }}>
+            <div style={{ color: '#7aaaf0', marginBottom: 8, fontWeight: 'bold', fontSize: 13 }}>
+              Results
+            </div>
+            {log.map((entry, i) => (
+              <div key={i} style={{ marginBottom: 7, lineHeight: 1.4 }}>
+                <span style={{ color: 'white', fontWeight: 'bold' }}>{entry.start}</span>
+                <span style={{ color: '#778899' }}> →</span>
+                <br />
+                <span style={{ color: OUTCOME_COLOR[entry.outcome] }}>
+                  {OUTCOME_LABEL[entry.outcome]}
+                </span>
+                <br />
+                <span style={{ color: '#556677', fontSize: 11 }}>
+                  {entry.steps} steps
+                  {entry.steps >= MAX_NODES - 1 ? ' (capped)' : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Status bar ── */}
+      <div style={{
+        background: '#0d1528', padding: '3px 14px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        borderTop: '1px solid #1e2f55', fontSize: 11, color: '#556688', flexShrink: 0,
+      }}>
+        <span>
+          Color: green = small values → red = large.
+          &nbsp;Yellow glow = cycle node.
+          &nbsp;Enter a starting value and press Add # or ↵.
+          {locked && '  ·  Parameters locked by instructor — explore freely.'}
+          {!locked && '  ·  Parameters unlocked — changing them clears the graph.'}
+        </span>
+        <span style={{ color: '#445577' }}>
+          m={m} &nbsp;|&nbsp; a={a} &nbsp;|&nbsp; d=2 (fixed)
+        </span>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
