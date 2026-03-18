@@ -285,11 +285,7 @@ function App() {
   const canvasRef = useRef(null);
   const paramsRef = useRef({ m, a, d });
   const rafRef    = useRef(null);
-  const pausedRef = useRef(false);
-  const speedRef  = useRef(1);
 
-  const [paused,   setPaused]   = useState(false);
-  const [speed,    setSpeed]    = useState(1);
   const [overflow, setOverflow] = useState(null);
   const [hoveredNode, setHoveredNode] = useState(null);
   const [showDataTable, setShowDataTable] = useState(false);
@@ -439,7 +435,6 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
 
 
   useEffect(() => { paramsRef.current = { m, a, d }; }, [m, a, d]);
-  useEffect(() => { speedRef.current  = speed; },    [speed]);
 
   // Load initial example sequence on mount
   useEffect(() => {
@@ -473,10 +468,7 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
       if (!alive) return;
       const cvs = canvasRef.current;
       if (cvs && cvs.width > 0) {
-        if (!pausedRef.current) {
-          for (let s = 0; s < speedRef.current; s++)
-            physicsStep(nodesRef.current, edgesRef.current, cvs.width, cvs.height);
-        }
+        physicsStep(nodesRef.current, edgesRef.current, cvs.width, cvs.height);
         drawGraph(cvs, nodesRef.current, edgesRef.current,
                   cyclesRef.current, startNodesRef.current, Date.now(),
                   paramsRef.current.m, paramsRef.current.a, paramsRef.current.d, hoveredNode);
@@ -493,11 +485,6 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
     cyclesRef.current     = new Set();
     startNodesRef.current = new Set();
     setLog([]);
-  }
-
-  function togglePause() {
-    pausedRef.current = !pausedRef.current;
-    setPaused(p => !p);
   }
 
   function changeParam(setter, val) {
@@ -647,25 +634,6 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
           </div>
         )}
 
-        {/* Pause / Resume */}
-        <button onClick={togglePause} style={{
-          background: paused ? '#3a2200' : '#1a2d55',
-          border: `1px solid ${paused ? '#aa7700' : '#3355aa'}`,
-          color: paused ? '#ffcc66' : '#aac4ff',
-          padding: '3px 11px', borderRadius: 4, fontSize: 12,
-        }}>
-          {paused ? '▶ Resume' : '⏸ Pause'}
-        </button>
-
-        {/* Speed */}
-        <label style={{ fontSize: 12, display: 'flex', gap: 5, alignItems: 'center', color: '#99bbee' }}>
-          Speed
-          <input type="range" min={1} max={4} value={speed}
-            onChange={e => setSpeed(parseInt(e.target.value))}
-            style={{ width: 60 }} />
-          <span style={{ color: 'white', minWidth: 14 }}>{speed}×</span>
-        </label>
-
         {/* Lock toggle */}
         <button onClick={() => setLocked(l => !l)} style={{
           background: '#1a2d55', border: '1px solid #3355aa',
@@ -675,7 +643,7 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
         </button>
 
         {/* Add number input */}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             type="number" value={inputVal}
             placeholder="Single value"
