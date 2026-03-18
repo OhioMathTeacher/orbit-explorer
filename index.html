@@ -150,10 +150,10 @@ function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, h
   ctx.globalAlpha = 0.07;
   ctx.fillStyle = 'white';
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  ctx.textBaseline = 'bottom';
   ctx.font = `bold ${Math.min(Math.round(W / 26), 52)}px monospace`;
-  ctx.fillText(`f(n) = n / ${d}   (n even)`, W / 2, H / 2 - H / 9);
-  ctx.fillText(`f(n) = ${m}n ${sign} ${Math.abs(a)}   (n odd)`, W / 2, H / 2 + H / 9);
+  ctx.fillText(`f(n) = n / ${d}   (n even)`, W / 2, H - 50);
+  ctx.fillText(`f(n) = ${m}n ${sign} ${Math.abs(a)}   (n odd)`, W / 2, H - 10);
   ctx.restore();
 
   // Edges with arrowheads
@@ -291,7 +291,6 @@ function App() {
   const [paused,   setPaused]   = useState(false);
   const [speed,    setSpeed]    = useState(1);
   const [overflow, setOverflow] = useState(null);
-  const [autoMode, setAutoMode] = useState(true);
   const [hoveredNode, setHoveredNode] = useState(null);
   const [showDataTable, setShowDataTable] = useState(false);
   const [batchInput, setBatchInput] = useState('');
@@ -438,16 +437,19 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
     setChatLoading(false);
   }
 
-  const autoRef      = useRef(true);
-  const autoTimerRef = useRef(null);
 
   useEffect(() => { paramsRef.current = { m, a, d }; }, [m, a, d]);
   useEffect(() => { speedRef.current  = speed; },    [speed]);
 
-  // Auto-load seed on mount so the canvas is never blank
+  // Load initial example sequence on mount
   useEffect(() => {
     // Small delay so canvas has sized itself first
-    const t = setTimeout(() => addNumberVal(seed), 300);
+    const t = setTimeout(() => {
+      // Load a simple example: 5, 7, 13 - students can see convergence patterns
+      [5, 7, 13].forEach((n, i) => {
+        setTimeout(() => addNumberVal(n), i * 400);
+      });
+    }, 300);
     return () => clearTimeout(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -484,28 +486,6 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
     rafRef.current = requestAnimationFrame(tick);
     return () => { alive = false; cancelAnimationFrame(rafRef.current); };
   }, []);
-
-  // ── Auto-explore: builds graph automatically until user interacts ────────────
-  function stopAuto() {
-    autoRef.current = false;
-    setAutoMode(false);
-    clearTimeout(autoTimerRef.current);
-  }
-
-  function scheduleNextAuto() {
-    if (!autoRef.current) return;
-    if (nodesRef.current.size >= MAX_NODES * 0.75) { stopAuto(); return; }
-    autoTimerRef.current = setTimeout(() => {
-      if (!autoRef.current) return;
-      // Pick a random value 2–150 not yet in the graph
-      let next, tries = 0;
-      do { next = Math.floor(Math.random() * 149) + 2; tries++; }
-      while (nodesRef.current.has(next) && tries < 50);
-      if (tries >= 50) { stopAuto(); return; }
-      setInputVal(String(next));
-      addNumberVal(next);
-    }, 2200);
-  }
 
   function reset() {
     nodesRef.current      = new Map();
@@ -574,13 +554,9 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
     setLog(prev =>
       [{ start: val, outcome, steps: seq.length - 1 }, ...prev].slice(0, 20)
     );
-
-    // Schedule next auto-addition if still in auto mode
-    scheduleNextAuto();
   }
 
   function addNumber() {
-    stopAuto();
     const val = parseInt(inputVal);
     if (isNaN(val) || val <= 0 || val > 99999) return;
     setInputVal('');
@@ -588,12 +564,10 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
   }
 
   function handleInputChange(e) {
-    stopAuto();
     setInputVal(e.target.value);
   }
 
   function addBatch() {
-    stopAuto();
     // Parse input like "1,2,3" or "1-10" or "1,5,7-9"
     const vals = [];
     const parts = batchInput.split(',').map(s => s.trim());
@@ -699,13 +673,6 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
         }}>
           {locked ? '🔒 Locked' : '🔓 Unlocked'}
         </button>
-
-        {/* Auto indicator */}
-        {autoMode && (
-          <span style={{ fontSize: 11, color: '#55aaff', opacity: 0.7, fontStyle: 'italic' }}>
-            ● auto — type to take control
-          </span>
-        )}
 
         {/* Add number input */}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
