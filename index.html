@@ -355,6 +355,51 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
     setShowKeyInput(true);
   }
 
+  function downloadChatTranscript() {
+    const now = new Date();
+    const timestamp = now.toISOString().replace('T', ' ').substring(0, 19);
+    const dateStr = now.toISOString().substring(0, 10);
+    
+    // Create formatted transcript
+    let transcript = `========================================\n`;
+    transcript += `COLLATZ VARIANT EXPLORER - CHAT TRANSCRIPT\n`;
+    transcript += `========================================\n\n`;
+    transcript += `Date/Time: ${timestamp}\n`;
+    transcript += `Parameters: m=${m}, a=${a}, d=${d}\n`;
+    transcript += `Numbers Explored: ${log.length} starting values\n\n`;
+    
+    if (log.length > 0) {
+      transcript += `EXPLORATION SUMMARY:\n`;
+      transcript += `${'─'.repeat(40)}\n`;
+      log.slice().reverse().forEach(entry => {
+        transcript += `  ${entry.start} → ${OUTCOME_LABEL[entry.outcome]} (${entry.steps} steps)\n`;
+      });
+      transcript += `\n`;
+    }
+    
+    transcript += `CONVERSATION WITH ZhengGPT:\n`;
+    transcript += `${'─'.repeat(40)}\n\n`;
+    
+    chatMessages.forEach((msg, i) => {
+      const speaker = msg.role === 'user' ? 'STUDENT' : 'ZhengGPT';
+      transcript += `[${speaker}]\n${msg.content}\n\n`;
+    });
+    
+    transcript += `${'─'.repeat(40)}\n`;
+    transcript += `End of transcript\n`;
+    
+    // Create download
+    const blob = new Blob([transcript], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `collatz-chat-${dateStr}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   async function sendChat() {
     const text = chatInput.trim();
     if (!text || chatLoading) return;
@@ -790,14 +835,22 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
           display: 'flex', flexDirection: 'column', flexShrink: 0,
         }}>
           <div style={{ padding: '8px 12px', borderBottom: '1px solid #1e2f55',
-            color: '#7aaaf0', fontWeight: 'bold', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            color: '#7aaaf0', fontWeight: 'bold', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
             <span>ZhengGPT {!apiKey && <span style={{ color: '#ff7755', fontSize: 11 }}>— no key</span>}</span>
-            {apiKey && (
-              <button onClick={clearApiKey} style={{
-                background: 'transparent', border: '1px solid #3a4a66',
-                color: '#7799bb', fontSize: 10, padding: '2px 6px', borderRadius: 3, cursor: 'pointer'
-              }}>Change Key</button>
-            )}
+            <div style={{ display: 'flex', gap: 4 }}>
+              {chatMessages.length > 1 && (
+                <button onClick={downloadChatTranscript} style={{
+                  background: 'transparent', border: '1px solid #3a4a66',
+                  color: '#7799bb', fontSize: 10, padding: '2px 6px', borderRadius: 3, cursor: 'pointer'
+                }} title="Download chat transcript">💾 Download</button>
+              )}
+              {apiKey && (
+                <button onClick={clearApiKey} style={{
+                  background: 'transparent', border: '1px solid #3a4a66',
+                  color: '#7799bb', fontSize: 10, padding: '2px 6px', borderRadius: 3, cursor: 'pointer'
+                }}>Change Key</button>
+              )}
+            </div>
           </div>
 
           {/* API Key Input (shown when no key is set) */}
