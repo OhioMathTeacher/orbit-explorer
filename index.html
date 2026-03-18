@@ -285,6 +285,7 @@ function App() {
   const canvasRef = useRef(null);
   const paramsRef = useRef({ m, a, d });
   const rafRef    = useRef(null);
+  const hoveredNodeRef = useRef(null);
 
   const [overflow, setOverflow] = useState(null);
   const [hoveredNode, setHoveredNode] = useState(null);
@@ -471,7 +472,7 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
         physicsStep(nodesRef.current, edgesRef.current, cvs.width, cvs.height);
         drawGraph(cvs, nodesRef.current, edgesRef.current,
                   cyclesRef.current, startNodesRef.current, Date.now(),
-                  paramsRef.current.m, paramsRef.current.a, paramsRef.current.d, hoveredNode);
+                  paramsRef.current.m, paramsRef.current.a, paramsRef.current.d, hoveredNodeRef.current);
       }
       rafRef.current = requestAnimationFrame(tick);
     }
@@ -606,15 +607,20 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
             }
           }
           
-          setHoveredNode({ val, isStart, isInCycle, seq, outcome, passesThrough });
+          const nodeInfo = { val, isStart, isInCycle, seq, outcome, passesThrough };
+          hoveredNodeRef.current = nodeInfo;
+          setHoveredNode(nodeInfo);
         } catch (err) {
           console.error('Error computing node info:', err);
           // Fallback to simple display
-          setHoveredNode({ val, isStart: false, isInCycle: false, seq: [val], outcome: 'unknown', passesThrough: [] });
+          const fallback = { val, isStart: false, isInCycle: false, seq: [val], outcome: 'unknown', passesThrough: [] };
+          hoveredNodeRef.current = fallback;
+          setHoveredNode(fallback);
         }
         return;
       }
     }
+    hoveredNodeRef.current = null;
     setHoveredNode(null);
   }
 
