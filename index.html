@@ -208,7 +208,7 @@ function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, h
     }
 
     // Highlight if hovered
-    const isHovered = hoveredNode === val;
+    const isHovered = hoveredNode?.val === val;
     if (isHovered) {
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, r + 5, 0, Math.PI * 2);
@@ -587,7 +587,20 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
       const dist = Math.sqrt(dx * dx + dy * dy);
       const r = startNodesRef.current.has(val) ? START_R : NODE_R;
       if (dist <= r + 5) {
-        setHoveredNode(val);
+        // Compute useful information about this node
+        const isStart = startNodesRef.current.has(val);
+        const isInCycle = cyclesRef.current.has(val);
+        
+        // Compute sequence from this node forward
+        const { seq, outcome } = computeSeq(val, paramsRef.current.m, paramsRef.current.a, paramsRef.current.d);
+        
+        // Find which starting values pass through this node
+        const passesThrough = [...startNodesRef.current].filter(startVal => {
+          const { seq: startSeq } = computeSeq(startVal, paramsRef.current.m, paramsRef.current.a, paramsRef.current.d);
+          return startSeq.includes(val);
+        });
+        
+        setHoveredNode({ val, isStart, isInCycle, seq, outcome, passesThrough });
         return;
       }
     }
@@ -718,13 +731,43 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
         {/* Node inspector tooltip */}
         {hoveredNode !== null && (
           <div style={{
-            position: 'absolute', top: 10, left: 10,
+            position: 'absolute', top: 10, left: 10, maxWidth: 400,
             background: 'rgba(10, 20, 40, 0.95)', border: '2px solid #4477aa',
-            borderRadius: 6, padding: '10px 14px', color: 'white',
+            borderRadius: 6, padding: '12px 16px', color: 'white',
             fontSize: 13, lineHeight: 1.6, boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
           }}>
-            <div style={{ fontWeight: 'bold', color: '#88ccff', marginBottom: 4 }}>Node: {hoveredNode}</div>
-            <div style={{ color: '#aabbcc' }}>Click canvas to dismiss</div>
+            <div style={{ fontWeight: 'bold', color: '#88ccff', fontSize: 15, marginBottom: 8 }}>Node: {hoveredNode.val}</div>
+            
+            {hoveredNode.isStart && (
+              <div style={{ color: '#8cd8ff', marginBottom: 6 }}>⭐ Starting value</div>
+            )}
+            {hoveredNode.isInCycle && (
+              <div style={{ color: '#ffd740', marginBottom: 6 }}>🔁 Part of a cycle</div>
+            )}
+            
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ color: '#99bbdd', fontSize: 12, marginBottom: 3 }}>Path from here:</div>
+              <div style={{ color: 'white', fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all' }}>
+                {hoveredNode.seq.slice(0, 15).join(' → ')}{hoveredNode.seq.length > 15 ? ' ...' : ''}
+              </div>
+              <div style={{ color: '#7799bb', fontSize: 11, marginTop: 3 }}>
+                {hoveredNode.outcome === 'converge' && `Reaches 1 in ${hoveredNode.seq.length - 1} steps`}
+                {hoveredNode.outcome === 'cycle' && `Enters cycle in ${hoveredNode.seq.length - 1} steps`}
+                {hoveredNode.outcome === 'diverge' && 'Diverges to infinity'}
+                {hoveredNode.outcome === 'noninteger' && 'Becomes non-integer'}
+              </div>
+            </div>
+            
+            {hoveredNode.passesThrough.length > 0 && (
+              <div style={{ marginBottom: 8, paddingTop: 8, borderTop: '1px solid #334455' }}>
+                <div style={{ color: '#99bbdd', fontSize: 12, marginBottom: 3 }}>Starting values through this node:</div>
+                <div style={{ color: '#aaddff', fontFamily: 'monospace', fontSize: 12 }}>
+                  {hoveredNode.passesThrough.sort((a,b) => a - b).join(', ')}
+                </div>
+              </div>
+            )}
+            
+            <div style={{ color: '#667788', fontSize: 11, marginTop: 8 }}>Click canvas to dismiss</div>
           </div>
         )}
 
