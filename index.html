@@ -887,7 +887,7 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
                 {Array.from({ length: 100 }, (_, i) => block * 100 + i + 1).map(n => {
                   const hit = visitedNums.has(n);
                   return (
-                    <div key={n} style={{
+                    <button key={n} type="button" style={{
                       aspectRatio: '1',
                       background: hit ? valColor(n) : '#182840',
                       border: hit ? '1px solid rgba(255,255,255,0.2)' : '1px solid #1e3566',
@@ -895,15 +895,19 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 8, fontWeight: 'bold',
                       cursor: 'pointer',
+                      padding: 0,
+                      userSelect: 'none',
+                      WebkitUserSelect: 'none',
                       color: hit ? 'rgba(0,0,0,0.65)' : '#2a4060',
                     }}
                     title={`Add ${n}`}
-                    onClick={() => {
+                    onMouseDown={e => {
+                      e.preventDefault();
                       setInputVal(String(n));
                       addNumberVal(n);
                     }}>
                       {n}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
