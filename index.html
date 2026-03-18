@@ -587,20 +587,31 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
       const dist = Math.sqrt(dx * dx + dy * dy);
       const r = startNodesRef.current.has(val) ? START_R : NODE_R;
       if (dist <= r + 5) {
-        // Compute useful information about this node
-        const isStart = startNodesRef.current.has(val);
-        const isInCycle = cyclesRef.current.has(val);
-        
-        // Compute sequence from this node forward
-        const { seq, outcome } = computeSeq(val, paramsRef.current.m, paramsRef.current.a, paramsRef.current.d);
-        
-        // Find which starting values pass through this node
-        const passesThrough = [...startNodesRef.current].filter(startVal => {
-          const { seq: startSeq } = computeSeq(startVal, paramsRef.current.m, paramsRef.current.a, paramsRef.current.d);
-          return startSeq.includes(val);
-        });
-        
-        setHoveredNode({ val, isStart, isInCycle, seq, outcome, passesThrough });
+        try {
+          // Compute useful information about this node
+          const isStart = startNodesRef.current.has(val);
+          const isInCycle = cyclesRef.current.has(val);
+          
+          // Compute sequence from this node forward
+          const { seq, outcome } = computeSeq(val, paramsRef.current.m, paramsRef.current.a, paramsRef.current.d);
+          
+          // Find which starting values pass through this node (limit to first 50 for performance)
+          const startVals = [...startNodesRef.current];
+          const passesThrough = [];
+          for (let i = 0; i < Math.min(startVals.length, 50); i++) {
+            const startVal = startVals[i];
+            const { seq: startSeq } = computeSeq(startVal, paramsRef.current.m, paramsRef.current.a, paramsRef.current.d);
+            if (startSeq.includes(val)) {
+              passesThrough.push(startVal);
+            }
+          }
+          
+          setHoveredNode({ val, isStart, isInCycle, seq, outcome, passesThrough });
+        } catch (err) {
+          console.error('Error computing node info:', err);
+          // Fallback to simple display
+          setHoveredNode({ val, isStart: false, isInCycle: false, seq: [val], outcome: 'unknown', passesThrough: [] });
+        }
         return;
       }
     }
@@ -755,6 +766,8 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
                 {hoveredNode.outcome === 'cycle' && `Enters cycle in ${hoveredNode.seq.length - 1} steps`}
                 {hoveredNode.outcome === 'diverge' && 'Diverges to infinity'}
                 {hoveredNode.outcome === 'noninteger' && 'Becomes non-integer'}
+                {hoveredNode.outcome === 'timeout' && 'Sequence too long'}
+                {hoveredNode.outcome === 'unknown' && 'Unable to compute'}
               </div>
             </div>
             
