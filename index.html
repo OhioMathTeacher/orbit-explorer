@@ -894,7 +894,13 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
                       borderRadius: 2,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 8, fontWeight: 'bold',
+                      cursor: 'pointer',
                       color: hit ? 'rgba(0,0,0,0.65)' : '#2a4060',
+                    }}
+                    title={`Add ${n}`}
+                    onClick={() => {
+                      setInputVal(String(n));
+                      addNumberVal(n);
                     }}>
                       {n}
                     </div>
