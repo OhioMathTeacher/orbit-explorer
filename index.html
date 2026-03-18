@@ -9,11 +9,26 @@
   <title>Collatz Variant Explorer</title>
   <script>
     (function forceFreshLoad() {
+      var BUILD = '6be422e-r2';
       var params = new URLSearchParams(window.location.search);
-      if (!params.has('cb')) {
+      if (params.get('fr') !== BUILD || !params.has('cb')) {
+        params.set('fr', BUILD);
         params.set('cb', String(Date.now()));
         var next = window.location.pathname + '?' + params.toString() + window.location.hash;
         window.location.replace(next);
+        return;
+      }
+
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(regs) {
+          regs.forEach(function(reg) { reg.unregister(); });
+        });
+      }
+
+      if ('caches' in window) {
+        caches.keys().then(function(keys) {
+          keys.forEach(function(k) { caches.delete(k); });
+        });
       }
     })();
   </script>
