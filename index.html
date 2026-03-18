@@ -903,6 +903,32 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
               </div>
             </div>
           ))}
+
+          <div style={{
+            marginTop: 'auto',
+            borderTop: '1px solid #1e2f55',
+            paddingTop: 8,
+            color: '#667788',
+            fontSize: 11,
+            lineHeight: 1.4,
+          }}>
+            <div>
+              Color scale: 
+              <span style={{ color: '#4ecb6f', fontWeight: 'bold' }}> green</span>
+              {' '}→ 
+              <span style={{ color: '#c4d83f', fontWeight: 'bold' }}> yellow</span>
+              {' '}→ 
+              <span style={{ color: '#f0a23a', fontWeight: 'bold' }}> orange</span>
+              {' '}→ 
+              <span style={{ color: '#e45a4f', fontWeight: 'bold' }}> red</span>
+            </div>
+            <div style={{ marginTop: 4 }}>
+              Green shows smaller values; red shows larger values.
+            </div>
+            <div style={{ marginTop: 2 }}>
+              Glowing nodes mark detected cycle values.
+            </div>
+          </div>
         </div>
       </div>
     </div>
