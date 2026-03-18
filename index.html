@@ -151,9 +151,12 @@ function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, h
   ctx.fillStyle = 'white';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
-  ctx.font = `bold ${Math.min(Math.round(W / 26), 52)}px monospace`;
-  ctx.fillText(`f(n) = n / ${d}   (n even)`, W / 2, H - 50);
-  ctx.fillText(`f(n) = ${m}n ${sign} ${Math.abs(a)}   (n odd)`, W / 2, H - 10);
+  const formulaSize = Math.min(Math.round(W / 26), 52);
+  const formulaGap = Math.max(42, Math.round(formulaSize * 1.2));
+  const formulaBottomPad = 12;
+  ctx.font = `bold ${formulaSize}px monospace`;
+  ctx.fillText(`f(n) = n / ${d}   (n even)`, W / 2, H - formulaBottomPad - formulaGap);
+  ctx.fillText(`f(n) = ${m}n ${sign} ${Math.abs(a)}   (n odd)`, W / 2, H - formulaBottomPad);
   ctx.restore();
 
   // Edges with arrowheads
@@ -280,6 +283,7 @@ function App() {
   const [overflow, setOverflow] = useState(null);
   const [showDataTable, setShowDataTable] = useState(false);
   const [batchInput, setBatchInput] = useState('5, 7, 13');
+  const [visitedNums, setVisitedNums] = useState(new Set());
 
   // ── Chat state ───────────────────────────────────────────────────────────────
   const SYSTEM_PROMPT = `You are ZhengGPT, a mathematical thinking partner helping students investigate a parameterized sequence rule.
@@ -475,6 +479,7 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
     cyclesRef.current     = new Set();
     startNodesRef.current = new Set();
     setLog([]);
+    setVisitedNums(new Set());
   }
 
   function changeParam(setter, val) {
@@ -531,6 +536,11 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
     setLog(prev =>
       [{ start: val, outcome, steps: seq.length - 1 }, ...prev].slice(0, 20)
     );
+    setVisitedNums(prev => {
+      const next = new Set(prev);
+      for (const v of seq) { if (v >= 1 && v <= 200) next.add(v); }
+      return next;
+    });
   }
 
   function addNumber() {
@@ -831,49 +841,42 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
           </div>
         </div>
 
-        {/* Results log */}
-        {log.length > 0 && (
+        {/* ── Scoreboard ── */}
+        <div style={{
+          width: 290, background: '#0a1020', borderLeft: '1px solid #1e2f55',
+          display: 'flex', flexDirection: 'column', flexShrink: 0,
+          overflowY: 'auto', padding: '8px 10px',
+        }}>
           <div style={{
-            width: 200, background: '#0d1528', borderLeft: '1px solid #1e2f55',
-            padding: '10px 8px', overflowY: 'auto', fontSize: 12, flexShrink: 0,
-          }}>
-            <div style={{ color: '#7aaaf0', marginBottom: 8, fontWeight: 'bold', fontSize: 13 }}>
-              Results
-            </div>
-            {log.map((entry, i) => (
-              <div key={i} style={{ marginBottom: 7, lineHeight: 1.4 }}>
-                <span style={{ color: 'white', fontWeight: 'bold' }}>{entry.start}</span>
-                <span style={{ color: '#778899' }}> →</span>
-                <br />
-                <span style={{ color: OUTCOME_COLOR[entry.outcome] }}>
-                  {OUTCOME_LABEL[entry.outcome]}
-                </span>
-                <br />
-                <span style={{ color: '#556677', fontSize: 11 }}>
-                  {entry.steps} steps
-                  {entry.steps >= MAX_NODES - 1 ? ' (capped)' : ''}
-                </span>
+            color: '#7aaaf0', fontWeight: 'bold', fontSize: 12,
+            textAlign: 'center', letterSpacing: 2, marginBottom: 8,
+          }}>DATA REFERENCE GRIDS</div>
+          {[0, 1].map(block => (
+            <div key={block} style={{ marginBottom: 10 }}>
+              <div style={{ color: '#99bbdd', fontSize: 11, textAlign: 'center', marginBottom: 4 }}>
+                {block === 0 ? '1 – 100' : '101 – 200'}
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* ── Status bar ── */}
-      <div style={{
-        background: '#0d1528', padding: '3px 14px',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        borderTop: '1px solid #1e2f55', fontSize: 11, color: '#556688', flexShrink: 0,
-      }}>
-        <span>
-          Color: green = small values → red = large.
-          &nbsp;Yellow glow = cycle node.
-          &nbsp;Enter a starting value and press Add # or ↵.
-          &nbsp;Changing parameters clears the graph.
-        </span>
-        <span style={{ color: '#445577' }}>
-          m={m} &nbsp;|&nbsp; a={a} &nbsp;|&nbsp; d={d}
-        </span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: 2 }}>
+                {Array.from({ length: 100 }, (_, i) => block * 100 + i + 1).map(n => {
+                  const hit = visitedNums.has(n);
+                  return (
+                    <div key={n} style={{
+                      aspectRatio: '1',
+                      background: hit ? valColor(n) : '#182840',
+                      border: hit ? '1px solid rgba(255,255,255,0.2)' : '1px solid #1e3566',
+                      borderRadius: 2,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 8, fontWeight: 'bold',
+                      color: hit ? 'rgba(0,0,0,0.65)' : '#2a4060',
+                    }}>
+                      {n}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
