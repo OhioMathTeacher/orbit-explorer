@@ -751,7 +751,7 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
         {/* ── ZhengGPT Chat Panel ── */}
         <div style={{
           width: 300, background: '#0a1020', borderLeft: '1px solid #1e2f55',
-          display: 'flex', flexDirection: 'column', flexShrink: 0,
+          display: 'flex', flexDirection: 'column', flexShrink: 0, order: 2,
         }}>
           <div style={{ padding: '8px 12px', borderBottom: '1px solid #1e2f55',
             color: '#7aaaf0', fontWeight: 'bold', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -871,7 +871,7 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
         {/* ── Scoreboard ── */}
         <div style={{
           width: 290, background: '#0a1020', borderLeft: '1px solid #1e2f55',
-          display: 'flex', flexDirection: 'column', flexShrink: 0,
+          display: 'flex', flexDirection: 'column', flexShrink: 0, order: 1,
           overflowY: 'auto', padding: '8px 10px',
         }}>
           <div style={{
@@ -937,6 +937,9 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
             </div>
             <div style={{ marginTop: 2 }}>
               Glowing nodes mark detected cycle values.
+            </div>
+            <div style={{ marginTop: 2 }}>
+              Click any grid number to add it as a starting value.
             </div>
           </div>
         </div>
