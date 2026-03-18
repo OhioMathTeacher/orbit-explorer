@@ -274,7 +274,7 @@ function App() {
     return urlKey || localStorage.getItem('openrouter_key') || '';
   });
   const [showKeyInput, setShowKeyInput] = useState(!urlKey && !localStorage.getItem('openrouter_key'));
-  const [inputVal, setInputVal] = useState(String(seed));
+  const [inputVal, setInputVal] = useState('');
   const [log, setLog]       = useState([]);
 
   // Physics state lives in refs — no React re-render needed each frame
@@ -293,7 +293,7 @@ function App() {
   const [overflow, setOverflow] = useState(null);
   const [hoveredNode, setHoveredNode] = useState(null);
   const [showDataTable, setShowDataTable] = useState(false);
-  const [batchInput, setBatchInput] = useState('');
+  const [batchInput, setBatchInput] = useState('5, 7, 13');
 
   // ── Chat state ───────────────────────────────────────────────────────────────
   const SYSTEM_PROMPT = `You are ZhengGPT, a mathematical thinking partner helping students investigate a parameterized sequence rule.
