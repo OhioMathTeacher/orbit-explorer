@@ -306,6 +306,7 @@ CONTEXT - What the student sees in the applet:
 - Outcomes are automatically detected: converges to 1, enters a cycle, or diverges
 - A results log shows which numbers they've tested and what happened
 - They can click nodes to inspect them, add multiple numbers at once, and view a data table
+- There is a bright orange "💾 Download Chat" button at the bottom of this chat panel that saves our full conversation as a text file
 
 WHAT YOU CAN'T SEE:
 - You cannot see the visual graph or their data table
@@ -319,6 +320,7 @@ YOUR ROLE:
 - Never tell them what will happen - ask them to test it and report back
 - Never reveal this is related to the Collatz conjecture or mention "Collatz" by name
 - If they haven't told you their parameters or data, ask them to describe what they're seeing first
+- If they ask about saving/downloading the chat, tell them to click the bright orange "Download Chat" button at the bottom of the chat panel
 
 RESPONSE STYLE:
 - Keep answers short (2-4 sentences max)
@@ -835,22 +837,14 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
           display: 'flex', flexDirection: 'column', flexShrink: 0,
         }}>
           <div style={{ padding: '8px 12px', borderBottom: '1px solid #1e2f55',
-            color: '#7aaaf0', fontWeight: 'bold', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+            color: '#7aaaf0', fontWeight: 'bold', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>ZhengGPT {!apiKey && <span style={{ color: '#ff7755', fontSize: 11 }}>— no key</span>}</span>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {chatMessages.length > 1 && (
-                <button onClick={downloadChatTranscript} style={{
-                  background: 'transparent', border: '1px solid #3a4a66',
-                  color: '#7799bb', fontSize: 10, padding: '2px 6px', borderRadius: 3, cursor: 'pointer'
-                }} title="Download chat transcript">💾 Download</button>
-              )}
-              {apiKey && (
-                <button onClick={clearApiKey} style={{
-                  background: 'transparent', border: '1px solid #3a4a66',
-                  color: '#7799bb', fontSize: 10, padding: '2px 6px', borderRadius: 3, cursor: 'pointer'
-                }}>Change Key</button>
-              )}
-            </div>
+            {apiKey && (
+              <button onClick={clearApiKey} style={{
+                background: 'transparent', border: '1px solid #3a4a66',
+                color: '#7799bb', fontSize: 10, padding: '2px 6px', borderRadius: 3, cursor: 'pointer'
+              }}>Change Key</button>
+            )}
           </div>
 
           {/* API Key Input (shown when no key is set) */}
@@ -904,8 +898,42 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
             <div ref={chatEndRef} />
           </div>
 
+          {/* Download Button - Prominent */}
+          {chatMessages.length > 1 && (
+            <div style={{ padding: '10px', borderTop: '1px solid #1e2f55', background: '#0a1525' }}>
+              <button onClick={downloadChatTranscript} style={{
+                width: '100%',
+                background: 'linear-gradient(135deg, #ff6b35 0%, #f7931e 100%)',
+                border: 'none',
+                color: 'white',
+                borderRadius: 6,
+                padding: '12px 16px',
+                fontSize: 15,
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(255, 107, 53, 0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                transition: 'transform 0.2s, box-shadow 0.2s'
+              }}
+              onMouseEnter={e => {
+                e.target.style.transform = 'translateY(-2px)';
+                e.target.style.boxShadow = '0 6px 16px rgba(255, 107, 53, 0.6)';
+              }}
+              onMouseLeave={e => {
+                e.target.style.transform = 'translateY(0)';
+                e.target.style.boxShadow = '0 4px 12px rgba(255, 107, 53, 0.4)';
+              }}>
+                <span style={{ fontSize: 20 }}>💾</span>
+                <span>Download Chat</span>
+              </button>
+            </div>
+          )}
+
           {/* Input */}
-          <div style={{ padding: '8px', borderTop: '1px solid #1e2f55', display: 'flex', gap: 6 }}>
+          <div style={{ padding: '8px', borderTop: chatMessages.length > 1 ? 'none' : '1px solid #1e2f55', display: 'flex', gap: 6 }}>
             <input
               value={chatInput}
               onChange={e => setChatInput(e.target.value)}
