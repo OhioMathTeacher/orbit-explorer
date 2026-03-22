@@ -4,35 +4,59 @@ An interactive visualization tool for exploring parameterized sequence rules thr
 
 ## Versions
 
-### Version 0.5
+### Version 2 (Latest) ✨
 
-**[Launch Version 0.5](https://ohiomathteacher.github.io/collatz-explorer/)**
+**[Launch Version 2](https://ohiomathteacher.github.io/collatz-explorer/)** 
 
-Features in Version 0.5:
+**New in v2 (March 22, 2026):**
 
-- Orbit Explorer interface
-- Interactive graph visualization of sequence paths
+- **Visible Steps Control** - Bottom-left stepper to control how many sequence steps display (1-9999)
+  - Increment/decrement by clicking ▲/▼
+  - Type directly in the circle to jump to any value
+  - Extend cycles to see infinite repetition (e.g., 1↔2↔1↔2... for 100+ steps)
+  - Reduce steps to see only early sequence behavior
+- **Show Cycles Layout** - Toggle to arrange cycle nodes in separate circular groups
+  - Clearer visualization of cycle structure vs path-to-cycle nodes
+  - Multiple cycles stack vertically when present
+  - Easier analysis of cycle overlap/independence
+- **Curved Cycle Arrows** - Multiple curved yellow arrows show bidirectional cycle edges
+  - 3 arrow pairs with fading effect emphasize infinite looping
+  - Makes it visually obvious sequences loop forever, not stop at a value
+- **Timestamped Downloads** - Hour-minute-second timestamps on CSV/TXT filenames
+  - Better tracking for research data collection
+  - Example: `orbit-explorer-cases-2026-03-22-20-43-00.csv`
+
+All features from v1 remain available.
+
+### Version 1 (Stable)
+
+**[Launch Version 1](https://github.com/OhioMathTeacher/collatz-explorer/tree/v1)** | [View v1 Source](https://github.com/OhioMathTeacher/collatz-explorer/blob/v1/index.html)
+
+**Features in v1:**
+
+- Interactive graph visualization with force-directed layout
 - Adjustable parameters for m, b, and d
-- Single-value entry for starting numbers
-- Cases panel with Recent Results and Saved Cases
-- Large-value handling with clearer warning messages
-- Reference grids with movable viewing windows and Recent Starts
-- Draggable number balls that pin in place when moved
-- In-canvas Reset Layout control
+- Click numbers in canvas to add them to exploration
+- Draggable nodes that pin in place
+- Purple breathing animation for deliberately-tested start nodes
+- Yellow glow for detected cycle nodes
+- Cases panel with Recent Results (auto-fills) and Saved Cases (manual save)
+- Download Cases button (exports CSV with metadata)
+- Download Chat button (saves AI conversation as TXT)
+- Reset button (clears visual graph, preserves data for research)
+- Reset Layout button (releases pinned nodes)
 - Grid on/off toggle
 - Light theme toggle
-- Language dropdown for English, Spanish, and Simplified Chinese
-- AI thinking partner via OpenRouter
+- Language support: English, Spanish, Simplified Chinese
+- ZhengGPT AI thinking partner (OpenRouter or DeepSeek)
+- Reference grids with movable viewing windows
+- Outcome detection: converges to 1, enters cycle, or diverges
 
-### Release 1.0
+### Version 0.5 (Beta Archive)
 
-**[Launch Release 1.0](https://ohiomathteacher.github.io/collatz-explorer/index-experimental.html)**
+**[Launch Version 0.5](https://ohiomathteacher.github.io/collatz-explorer/index-experimental.html)**
 
-Features in Release 1.0:
-
-- Everything currently in Version 0.5
-- Experimental branch for upcoming release polishing
-- Continued testing space for interface refinements before wider rollout
+Early beta version used for initial testing. See v1 or v2 for current features.
 
 ## The Rule
 
