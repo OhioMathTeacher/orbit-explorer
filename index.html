@@ -42,7 +42,7 @@
     input { font-family: inherit; }
     input[type=number]::-webkit-outer-spin-button,
     input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
-    input[type=number] { -moz-appearance: textfield; }
+    input[type=number] { appearance: textfield; -moz-appearance: textfield; }
     input[type=range] { accent-color: #5588dd; }
   </style>
 </head>
@@ -52,17 +52,92 @@
 const { useState, useEffect, useRef } = React;
 
 // ── Constants ────────────────────────────────────────────────────────────────
-const MAX_ITER  = 300;    // max steps before timeout
-const MAX_VAL   = 5e5;    // divergence threshold
+const MAX_ITER  = 600;    // max steps before timeout
+const MAX_VAL   = 1e12;   // divergence threshold
+const MAX_START = 1e9;    // largest allowed starting value from the UI
 const MAX_NODES = 120;    // cap displayed nodes
 const NODE_R    = 15;     // base node radius px
 const START_R   = 22;     // radius for starting numbers (persistent anchor)
+const RELIABLE_START_LIMIT = Math.min(MAX_START, Number.MAX_SAFE_INTEGER);
+const PARAM_COLORS = {
+  m: '#63d471',
+  a: '#ffb347',
+  d: '#6bb7ff',
+};
+
+function formatValue(value) {
+  return Number.isFinite(value) ? value.toLocaleString() : String(value);
+}
+
+function measureSegmentWidth(ctx, text) {
+  return ctx.measureText(text).width;
+}
+
+function drawCenteredSegments(ctx, centerX, y, segments) {
+  const totalWidth = segments.reduce((sum, segment) => sum + measureSegmentWidth(ctx, segment.text), 0);
+  let cursorX = centerX - totalWidth / 2;
+  for (const segment of segments) {
+    ctx.fillStyle = segment.color;
+    ctx.fillText(segment.text, cursorX, y);
+    cursorX += measureSegmentWidth(ctx, segment.text);
+  }
+}
+
+function getSegmentsWidth(ctx, segments) {
+  return segments.reduce((sum, segment) => sum + measureSegmentWidth(ctx, segment.text), 0);
+}
+
+function drawFormulaLine(ctx, centerX, y, equationSegments, annotation, annotationColor, gap) {
+  const equationWidth = getSegmentsWidth(ctx, equationSegments);
+  const annotationWidth = measureSegmentWidth(ctx, annotation);
+  const totalWidth = equationWidth + gap + annotationWidth;
+  let cursorX = centerX - totalWidth / 2;
+
+  for (const segment of equationSegments) {
+    ctx.fillStyle = segment.color;
+    ctx.fillText(segment.text, cursorX, y);
+    cursorX += measureSegmentWidth(ctx, segment.text);
+  }
+
+  cursorX += gap;
+  ctx.fillStyle = annotationColor;
+  ctx.fillText(annotation, cursorX, y);
+}
+
+function normalizeIntegerInput(value) {
+  return String(value ?? '').replace(/[,_\s]/g, '');
+}
+
+function parseSingleStartInput(rawValue) {
+  const normalized = normalizeIntegerInput(rawValue);
+  if (!normalized) return { kind: 'empty' };
+  if (!/^\d+$/.test(normalized)) return { kind: 'invalid' };
+
+  const value = Number(normalized);
+  if (!Number.isSafeInteger(value)) return { kind: 'unsafe', value };
+  if (value <= 0) return { kind: 'invalid' };
+  if (value > RELIABLE_START_LIMIT) return { kind: 'above-limit', value };
+
+  return { kind: 'ok', value };
+}
+
+function getStartLimitWarning(rawValue) {
+  const parsed = parseSingleStartInput(rawValue);
+  if (parsed.kind === 'above-limit') {
+    return `Start values above ${formatValue(RELIABLE_START_LIMIT)} are outside the applet's reliable range.`;
+  }
+  if (parsed.kind === 'unsafe') {
+    return 'That value is larger than JavaScript can track reliably as an exact integer.';
+  }
+  return '';
+}
 
 // ── Sequence computation ──────────────────────────────────────────────────────
 function computeSeq(start, m, a, d) {
   const seq    = [start];
   const seen   = new Map([[start, 0]]);
   let n = start;
+  let maxValue = start;
 
   for (let i = 0; i < MAX_ITER; i++) {
     let next;
@@ -71,21 +146,22 @@ function computeSeq(start, m, a, d) {
     } else {
       next = m * n + a;
     }
+    maxValue = Math.max(maxValue, next);
     if (!Number.isInteger(next) || next <= 0)
-      return { seq, outcome: 'noninteger', cycleAt: -1 };
+      return { seq, outcome: 'noninteger', cycleAt: -1, maxValue };
     if (next > MAX_VAL) {
       seq.push(next);
-      return { seq, outcome: 'diverge', cycleAt: -1 };
+      return { seq, outcome: 'diverge', cycleAt: -1, maxValue };
     }
     seq.push(next);
     if (seen.has(next)) {
       const cycleAt = seen.get(next);
-      return { seq, outcome: next === 1 ? 'converge' : 'cycle', cycleAt };
+      return { seq, outcome: next === 1 ? 'converge' : 'cycle', cycleAt, maxValue };
     }
     seen.set(next, seq.length - 1);
     n = next;
   }
-  return { seq, outcome: 'timeout', cycleAt: -1 };
+  return { seq, outcome: 'timeout', cycleAt: -1, maxValue };
 }
 
 // ── Color by log(value) ──────────────────────────────────────────────────────
@@ -174,17 +250,39 @@ function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, h
 
   // Formula watermark — always visible behind the graph
   const sign = a >= 0 ? '+' : '−';
+  const evenEquation = [
+    { text: 'f(n) = n / ', color: 'white' },
+    { text: String(d), color: PARAM_COLORS.d },
+  ];
+  const oddEquation = [
+    { text: 'f(n) = ', color: 'white' },
+    { text: String(m), color: PARAM_COLORS.m },
+    { text: 'n ', color: 'white' },
+    { text: sign, color: 'white' },
+    { text: ' ', color: 'white' },
+    { text: String(Math.abs(a)), color: PARAM_COLORS.a },
+  ];
   ctx.save();
-  ctx.globalAlpha = 0.07;
-  ctx.fillStyle = 'white';
-  ctx.textAlign = 'center';
+  ctx.globalAlpha = 0.48;
+  ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
-  const formulaSize = Math.min(Math.round(W / 26), 52);
-  const formulaGap = Math.max(42, Math.round(formulaSize * 1.2));
+  const maxFormulaWidth = Math.max(260, W - 80);
+  let formulaSize = Math.min(Math.round(W / 28), 46);
+  let annotationGap = 26;
+  while (formulaSize > 24) {
+    ctx.font = `bold ${formulaSize}px monospace`;
+    annotationGap = Math.max(24, Math.round(formulaSize * 0.72));
+    const evenWidth = getSegmentsWidth(ctx, evenEquation) + annotationGap + measureSegmentWidth(ctx, '(n even)');
+    const oddWidth = getSegmentsWidth(ctx, oddEquation) + annotationGap + measureSegmentWidth(ctx, '(n odd)');
+    if (Math.max(evenWidth, oddWidth) <= maxFormulaWidth) break;
+    formulaSize -= 2;
+  }
   const formulaBottomPad = 12;
   ctx.font = `bold ${formulaSize}px monospace`;
-  ctx.fillText(`f(n) = n / ${d}   (n even)`, W / 2, H - formulaBottomPad - formulaGap);
-  ctx.fillText(`f(n) = ${m}n ${sign} ${Math.abs(a)}   (n odd)`, W / 2, H - formulaBottomPad);
+  const formulaGap = Math.max(formulaSize + 24, Math.round(formulaSize * 1.9));
+  const annotationColor = 'rgba(255,255,255,0.82)';
+  drawFormulaLine(ctx, W / 2, H - formulaBottomPad - formulaGap, evenEquation, '(n even)', annotationColor, annotationGap);
+  drawFormulaLine(ctx, W / 2, H - formulaBottomPad, oddEquation, '(n odd)', annotationColor, annotationGap);
   ctx.restore();
 
   // Edges with arrowheads
@@ -280,6 +378,8 @@ const OUTCOME_LABEL = {
 
 // ── App ──────────────────────────────────────────────────────────────────────
 function App() {
+  const GRID_BLOCK_SIZE = 100;
+
   // Read URL params: ?m=5&a=1&d=2
   const sp = new URLSearchParams(window.location.search);
   const urlM = sp.get('m'), urlA = sp.get('a'), urlD = sp.get('d');
@@ -313,8 +413,11 @@ function App() {
 
   const [overflow, setOverflow] = useState(null);
   const [showDataTable, setShowDataTable] = useState(false);
-  const [batchInput, setBatchInput] = useState('5, 7, 13');
   const [visitedNums, setVisitedNums] = useState(new Set());
+  const [inputWarning, setInputWarning] = useState('');
+  const [savedCases, setSavedCases] = useState([]);
+  const [gridStart, setGridStart] = useState(1);
+  const [gridCount, setGridCount] = useState(4);
 
   // ── Chat state ───────────────────────────────────────────────────────────────
   const SYSTEM_PROMPT = `You are ZhengGPT, a mathematical thinking partner helping students investigate a parameterized sequence rule.
@@ -322,7 +425,7 @@ function App() {
 CONTEXT - What the student sees in the applet:
 - An interactive graph showing sequences as connected nodes (bubbles) with arrows
 - Each starting number they enter creates a visual path through the graph
-- The rule is: f(n) = n/d (if even) or f(n) = mn + a (if odd), where m, a, and d are parameters they can adjust
+- The rule is: f(n) = n/d (if even) or f(n) = mn + b (if odd), where m, b, and d are parameters they can adjust
 - Outcomes are automatically detected: converges to 1, enters a cycle, or diverges
 - A results log shows which numbers they've tested and what happened
 - They can click nodes to inspect them, add multiple numbers at once, and view a data table
@@ -331,7 +434,7 @@ CONTEXT - What the student sees in the applet:
 WHAT YOU CAN'T SEE:
 - You cannot see the visual graph or their data table
 - You don't know which specific numbers they've tried unless they tell you
-- You don't know their current m, a, and d parameter values unless they tell you
+- You don't know their current m, b, and d parameter values unless they tell you
 
 YOUR ROLE:
 - Help them notice patterns in the data THEY describe to you
@@ -402,7 +505,7 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
     transcript += `COLLATZ VARIANT EXPLORER - CHAT TRANSCRIPT\n`;
     transcript += `========================================\n\n`;
     transcript += `Date/Time: ${timestamp}\n`;
-    transcript += `Parameters: m=${m}, a=${a}, d=${d}\n`;
+    transcript += `Parameters: m=${m}, b=${a}, d=${d}\n`;
     transcript += `Numbers Explored: ${log.length} starting values\n\n`;
     
     if (log.length > 0) {
@@ -537,15 +640,55 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
     setVisitedNums(new Set());
   }
 
+  function alignGridStart(value) {
+    const safeValue = Math.max(1, parseInt(value || 1, 10) || 1);
+    return Math.floor((safeValue - 1) / GRID_BLOCK_SIZE) * GRID_BLOCK_SIZE + 1;
+  }
+
+  function updateGridStart(value) {
+    setGridStart(alignGridStart(value));
+  }
+
+  function updateGridCount(value) {
+    const next = parseInt(value, 10);
+    if (Number.isNaN(next)) return;
+    setGridCount(Math.max(1, Math.min(20, next)));
+  }
+
+  function focusGridOnValue(value) {
+    const rangeEnd = gridStart + gridCount * GRID_BLOCK_SIZE - 1;
+    if (value < gridStart || value > rangeEnd) {
+      setGridStart(alignGridStart(value));
+    }
+  }
+
   function changeParam(setter, val) {
     setter(val);
     reset();
   }
 
+  function saveCase(entry) {
+    const key = `${entry.m}:${entry.a}:${entry.d}:${entry.start}:${entry.steps}:${entry.outcome}:${entry.maxValue}`;
+    setSavedCases(prev => {
+      if (prev.some(item => item.key === key)) return prev;
+      return [{ ...entry, key }, ...prev];
+    });
+  }
+
+  function isCaseSaved(entry) {
+    const key = `${entry.m}:${entry.a}:${entry.d}:${entry.start}:${entry.steps}:${entry.outcome}:${entry.maxValue}`;
+    return savedCases.some(item => item.key === key);
+  }
+
+  function removeSavedCase(key) {
+    setSavedCases(prev => prev.filter(entry => entry.key !== key));
+  }
+
   function addNumberVal(val) {
-    if (isNaN(val) || val <= 0 || val > 99999) return;
+    if (isNaN(val) || val <= 0 || val > MAX_START) return;
+    focusGridOnValue(val);
     const { m, a, d } = paramsRef.current;
-    const { seq, outcome, cycleAt } = computeSeq(val, m, a, d);
+    const { seq, outcome, cycleAt, maxValue } = computeSeq(val, m, a, d);
     const limited = seq.slice(0, MAX_NODES);
 
     const cvs = canvasRef.current;
@@ -586,51 +729,42 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
       }
     }
 
-    if (outcome === 'diverge') setOverflow({ start: val, steps: seq.length - 1 });
+    if (outcome === 'diverge') {
+      setOverflow({ start: val, steps: seq.length - 1, maxValue });
+    }
 
     setLog(prev =>
-      [{ start: val, outcome, steps: seq.length - 1 }, ...prev].slice(0, 20)
+      [{ start: val, outcome, steps: seq.length - 1, maxValue, m, a, d }, ...prev].slice(0, 20)
     );
     setVisitedNums(prev => {
       const next = new Set(prev);
-      for (const v of seq) { if (v >= 1 && v <= 200) next.add(v); }
+      for (const v of seq) {
+        if (Number.isSafeInteger(v) && v >= 1 && v <= MAX_VAL) next.add(v);
+      }
       return next;
     });
   }
 
   function addNumber() {
-    const val = parseInt(inputVal);
-    if (isNaN(val) || val <= 0 || val > 99999) return;
+    const parsed = parseSingleStartInput(inputVal);
+    if (parsed.kind !== 'ok') {
+      setInputWarning(getStartLimitWarning(inputVal) || 'Enter a positive whole number within the supported range.');
+      return;
+    }
+    const val = parsed.value;
+    setInputWarning('');
     setInputVal('');
     addNumberVal(val);
   }
 
   function handleInputChange(e) {
-    setInputVal(e.target.value);
-  }
-
-  function addBatch() {
-    // Parse input like "1,2,3" or "1-10" or "1,5,7-9"
-    const vals = [];
-    const parts = batchInput.split(',').map(s => s.trim());
-    for (const part of parts) {
-      if (part.includes('-')) {
-        const [start, end] = part.split('-').map(s => parseInt(s.trim()));
-        if (!isNaN(start) && !isNaN(end)) {
-          for (let i = start; i <= end && i <= 99999; i++) vals.push(i);
-        }
-      } else {
-        const n = parseInt(part);
-        if (!isNaN(n)) vals.push(n);
-      }
-    }
-    vals.forEach(v => addNumberVal(v));
-    setBatchInput('');
+    const nextValue = e.target.value;
+    setInputVal(nextValue);
+    setInputWarning(getStartLimitWarning(nextValue));
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
   const sign    = a >= 0 ? '+' : '−';
-  const ruleText = `f(n) = n/${d}  (even)   |   ${m}n ${sign} ${Math.abs(a)}  (odd)`;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -646,35 +780,42 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
         </span>
 
         <span style={{ color: '#99bbee', fontSize: 13, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-          {ruleText}
+          <span style={{ color: 'white' }}>f(n) = n/</span>
+          <span style={{ color: PARAM_COLORS.d }}>{d}</span>
+          <span style={{ color: 'white' }}> (even)   |   </span>
+          <span style={{ color: PARAM_COLORS.m }}>{m}</span>
+          <span style={{ color: 'white' }}>n {sign} </span>
+          <span style={{ color: PARAM_COLORS.a }}>{Math.abs(a)}</span>
+          <span style={{ color: 'white' }}> (odd)</span>
         </span>
 
         {/* Parameter sliders */}
         <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
           {[
-            ['m', m, v => changeParam(setM, v), 1, 9],
-            ['a', a, v => changeParam(setA, v), -9, 9],
-            ['d', d, v => changeParam(setD, v), 2, 9],
-          ].map(([label, val, setter, min, max]) => (
+            ['m', 'm', PARAM_COLORS.m, m, v => changeParam(setM, v), 1, 9],
+            ['a', 'b', PARAM_COLORS.a, a, v => changeParam(setA, v), -9, 9],
+            ['d', 'd', PARAM_COLORS.d, d, v => changeParam(setD, v), 2, 9],
+          ].map(([key, label, color, val, setter, min, max]) => (
             <label key={label} style={{ fontSize: 13, display: 'flex', gap: 5, alignItems: 'center' }}>
-              <span style={{ color: '#7aaaf0', minWidth: 18 }}>{label} =</span>
+              <span style={{ color, minWidth: 18, fontWeight: 'bold' }}>{label} =</span>
               <input type="range" min={min} max={max} value={val}
                 onChange={e => setter(parseInt(e.target.value))}
-                style={{ width: 72 }} />
-              <span style={{ color: 'white', minWidth: 22 }}>{val}</span>
+                style={{ width: 72, accentColor: color }} />
+              <span style={{ color, minWidth: 22, fontWeight: 'bold' }}>{val}</span>
             </label>
           ))}
         </div>
 
         {/* Add number input */}
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
-            type="number" value={inputVal}
-            placeholder="Single value"
+            type="text" inputMode="numeric" value={inputVal}
+            placeholder="Single start value"
             onChange={handleInputChange}
             onKeyDown={e => e.key === 'Enter' && addNumber()}
             style={{
-              width: 110, background: '#1a2d50', border: '1px solid #3355aa',
+              width: 150, background: '#1a2d50', border: '1px solid #3355aa',
               color: 'white', padding: '4px 8px', borderRadius: 4, fontSize: 12,
             }}
           />
@@ -682,20 +823,6 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
             background: '#1e44aa', border: 'none', color: 'white',
             padding: '4px 11px', borderRadius: 4, fontSize: 12,
           }}>Add</button>
-          <input
-            type="text" value={batchInput}
-            placeholder="Batch: 1,5,10-20"
-            onChange={e => setBatchInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && addBatch()}
-            style={{
-              width: 135, background: '#1a2d50', border: '1px solid #3355aa',
-              color: 'white', padding: '4px 8px', borderRadius: 4, fontSize: 12,
-            }}
-          />
-          <button onClick={addBatch} style={{
-            background: '#2a5522', border: 'none', color: 'white',
-            padding: '4px 11px', borderRadius: 4, fontSize: 12,
-          }}>Batch</button>
           <button onClick={reset} style={{
             background: '#3d1020', border: 'none', color: '#ffaaaa',
             padding: '4px 12px', borderRadius: 4, fontSize: 12,
@@ -703,7 +830,51 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
           <button onClick={() => setShowDataTable(!showDataTable)} style={{
             background: showDataTable ? '#2a4455' : '#1a2d50', border: '1px solid #3355aa',
             color: 'white', padding: '4px 11px', borderRadius: 4, fontSize: 12,
-          }}>📊 Table</button>
+          }}>📊 Cases</button>
+            <button
+              type="button"
+              disabled={!log[0] || isCaseSaved(log[0])}
+              onClick={() => log[0] && saveCase(log[0])}
+              style={{
+                background: !log[0] ? '#253247' : isCaseSaved(log[0]) ? '#254231' : 'linear-gradient(135deg, #2f7a44 0%, #49a95f 100%)',
+                border: 'none',
+                color: !log[0] ? '#7f93b0' : 'white',
+                padding: '4px 12px',
+                borderRadius: 4,
+                fontSize: 12,
+                fontWeight: 'bold',
+                cursor: !log[0] || isCaseSaved(log[0]) ? 'default' : 'pointer',
+                boxShadow: !log[0] || isCaseSaved(log[0]) ? 'none' : '0 4px 10px rgba(73, 169, 95, 0.35)',
+              }}>
+              {!log[0] ? 'Save Latest Case' : isCaseSaved(log[0]) ? 'Latest Case Saved' : 'Save Latest Case'}
+            </button>
+            <button
+              type="button"
+              title="Save the most recent result here, or open Cases and save any row from Recent Results."
+              aria-label="How case saving works"
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: '50%',
+                border: '1px solid #44608a',
+                background: '#162040',
+                color: '#9fc3f0',
+                fontSize: 12,
+                fontWeight: 'bold',
+                padding: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'help',
+              }}>
+              ?
+            </button>
+          </div>
+          {inputWarning && (
+            <div style={{ color: '#ffb366', fontSize: 11, lineHeight: 1.35, maxWidth: 430 }}>
+              {inputWarning}
+            </div>
+          )}
         </div>
       </div>
 
@@ -716,10 +887,13 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
           alignItems: 'center', justifyContent: 'center',
         }}>
           <div style={{ fontSize: 'clamp(36px,7vw,88px)', fontWeight: 'bold', color: 'white', letterSpacing: 4, textAlign: 'center', lineHeight: 1.1 }}>
-            INTEGER<br/>OVERFLOW
+            VALUE LIMIT<br/>REACHED
           </div>
           <div style={{ color: '#ff8866', fontSize: 16, marginTop: 20, textAlign: 'center' }}>
-            Starting value <strong>{overflow.start}</strong> diverges — exceeded {MAX_VAL.toLocaleString()} after {overflow.steps} steps
+            Starting value <strong>{formatValue(overflow.start)}</strong> exceeded {formatValue(MAX_VAL)} after {overflow.steps} steps
+          </div>
+          <div style={{ color: '#aabbd0', fontSize: 13, marginTop: 10, textAlign: 'center', maxWidth: 560 }}>
+            This is not an input error. The sequence kept growing, so the app stopped once it crossed the current exploration ceiling. Peak value reached: <strong>{formatValue(overflow.maxValue)}</strong>.
           </div>
           <button onClick={() => setOverflow(null)} style={{
             marginTop: 36, background: 'transparent',
@@ -747,32 +921,130 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
             borderRadius: 8, padding: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.7)',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <span style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 14 }}>Data Table</span>
+              <span style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 14 }}>Cases</span>
               <button onClick={() => setShowDataTable(false)} style={{
                 background: 'transparent', border: '1px solid #4477aa',
                 color: '#aabbcc', borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer'
               }}>Close</button>
             </div>
-            <table style={{ width: '100%', fontSize: 12, color: '#ddeeff', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #3355aa' }}>
-                  <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Start</th>
-                  <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Outcome</th>
-                  <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Steps</th>
-                </tr>
-              </thead>
-              <tbody>
-                {log.map((entry, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid #223344' }}>
-                    <td style={{ padding: '6px', fontWeight: 'bold' }}>{entry.start}</td>
-                    <td style={{ padding: '6px', color: OUTCOME_COLOR[entry.outcome] }}>
-                      {OUTCOME_LABEL[entry.outcome]}
-                    </td>
-                    <td style={{ padding: '6px', textAlign: 'right', color: '#99aacc' }}>{entry.steps}</td>
+            <div style={{ color: '#7f93b0', fontSize: 11, lineHeight: 1.45, marginBottom: 10 }}>
+              Recent Results fill automatically every time you add a start value. Saved Cases are the examples students choose to keep for pattern-hunting.
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 12, marginBottom: 6 }}>Recent Results</div>
+              <table style={{ width: '100%', fontSize: 12, color: '#ddeeff', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #3355aa' }}>
+                    <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Start</th>
+                    <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Outcome</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Steps</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Peak</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Keep</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {log.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" style={{ padding: '8px 6px', color: '#667788' }}>No results yet. Add a starting value to create a case.</td>
+                    </tr>
+                  ) : log.map((entry, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #223344' }}>
+                      <td style={{ padding: '6px', fontWeight: 'bold' }}>{formatValue(entry.start)}</td>
+                      <td style={{ padding: '6px', color: OUTCOME_COLOR[entry.outcome] }}>
+                        {OUTCOME_LABEL[entry.outcome]}
+                      </td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: '#99aacc' }}>{entry.steps}</td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: '#99aacc' }}>{formatValue(entry.maxValue)}</td>
+                      <td style={{ padding: '6px', textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          onClick={() => saveCase(entry)}
+                          disabled={isCaseSaved(entry)}
+                          style={{
+                            background: isCaseSaved(entry) ? '#253247' : '#234f2d',
+                            border: `1px solid ${isCaseSaved(entry) ? '#445566' : '#2f7a44'}`,
+                            color: isCaseSaved(entry) ? '#9ab0c8' : '#dff5e5',
+                            borderRadius: 4,
+                            padding: '3px 8px',
+                            fontSize: 10,
+                            cursor: isCaseSaved(entry) ? 'default' : 'pointer',
+                          }}>
+                          {isCaseSaved(entry) ? 'Saved' : 'Save'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 12 }}>Saved Cases</div>
+                {savedCases.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSavedCases([])}
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid #445566',
+                      color: '#aabbcc',
+                      borderRadius: 4,
+                      padding: '2px 8px',
+                      fontSize: 10,
+                    }}>
+                    Clear Saved
+                  </button>
+                )}
+              </div>
+              <table style={{ width: '100%', fontSize: 12, color: '#ddeeff', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #3355aa' }}>
+                    <th style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.m }}>m</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.a }}>b</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.d }}>d</th>
+                    <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Start</th>
+                    <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Outcome</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Steps</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Peak</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Remove</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {savedCases.length === 0 ? (
+                    <tr>
+                      <td colSpan="8" style={{ padding: '8px 6px', color: '#667788' }}>No saved cases yet. Save a few interesting examples from Recent Results to compare patterns.</td>
+                    </tr>
+                  ) : savedCases.map(entry => (
+                    <tr key={entry.key} style={{ borderBottom: '1px solid #223344' }}>
+                      <td style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.m }}>{entry.m}</td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.a }}>{entry.a}</td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.d }}>{entry.d}</td>
+                      <td style={{ padding: '6px', fontWeight: 'bold' }}>{formatValue(entry.start)}</td>
+                      <td style={{ padding: '6px', color: OUTCOME_COLOR[entry.outcome] }}>{OUTCOME_LABEL[entry.outcome]}</td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: '#99aacc' }}>{entry.steps}</td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: '#99aacc' }}>{formatValue(entry.maxValue)}</td>
+                      <td style={{ padding: '6px', textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          onClick={() => removeSavedCase(entry.key)}
+                          style={{
+                            background: 'transparent',
+                            border: '1px solid #445566',
+                            color: '#aabbcc',
+                            borderRadius: 4,
+                            padding: '3px 8px',
+                            fontSize: 10,
+                          }}>
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -906,13 +1178,146 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
             color: '#7aaaf0', fontWeight: 'bold', fontSize: 12,
             textAlign: 'center', letterSpacing: 2, marginBottom: 8,
           }}>DATA REFERENCE GRIDS</div>
-          {[0, 1].map(block => (
-            <div key={block} style={{ marginBottom: 10 }}>
+
+          <div style={{
+            marginBottom: 12,
+            padding: '8px',
+            background: '#0f1a2a',
+            border: '1px solid #1e2f55',
+            borderRadius: 6,
+          }}>
+            <div style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 11, marginBottom: 8, letterSpacing: 1 }}>
+              GRID WINDOW
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 76px', gap: 6, marginBottom: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={{ color: '#99bbdd', fontSize: 10 }}>Start at</span>
+                <div style={{
+                  width: '100%',
+                  background: '#101a31',
+                  border: '1px solid #243858',
+                  color: '#ddeeff',
+                  borderRadius: 4,
+                  padding: '6px 8px',
+                  fontSize: 11,
+                  fontWeight: 'bold',
+                  letterSpacing: 0.5,
+                  cursor: 'default',
+                  userSelect: 'none',
+                }}>
+                  {formatValue(gridStart)}
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={{ color: '#99bbdd', fontSize: 10 }}>Blocks</span>
+                <div style={{
+                  width: '100%',
+                  background: '#101a31',
+                  border: '1px solid #243858',
+                  color: '#ddeeff',
+                  borderRadius: 4,
+                  padding: '6px 8px',
+                  fontSize: 11,
+                  fontWeight: 'bold',
+                  textAlign: 'center',
+                  cursor: 'default',
+                  userSelect: 'none',
+                }}>
+                  {gridCount}
+                </div>
+              </div>
+            </div>
+            <div style={{ color: '#667f9f', fontSize: 10, marginBottom: 6 }}>
+              Use Previous/Next to move the visible window.
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                onClick={() => updateGridStart(Math.max(1, gridStart - gridCount * GRID_BLOCK_SIZE))}
+                style={{
+                  flex: 1,
+                  background: '#162040',
+                  border: '1px solid #29406a',
+                  color: '#ddeeff',
+                  borderRadius: 4,
+                  padding: '5px 6px',
+                  fontSize: 10,
+                }}>
+                Previous {gridCount * GRID_BLOCK_SIZE}
+              </button>
+              <button
+                type="button"
+                onClick={() => updateGridStart(gridStart + gridCount * GRID_BLOCK_SIZE)}
+                style={{
+                  flex: 1,
+                  background: '#162040',
+                  border: '1px solid #29406a',
+                  color: '#ddeeff',
+                  borderRadius: 4,
+                  padding: '5px 6px',
+                  fontSize: 10,
+                }}>
+                Next {gridCount * GRID_BLOCK_SIZE}
+              </button>
+            </div>
+          </div>
+
+          <div style={{
+            marginBottom: 12,
+            padding: '8px',
+            background: '#0f1a2a',
+            border: '1px solid #1e2f55',
+            borderRadius: 6,
+          }}>
+            <div style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 11, marginBottom: 6, letterSpacing: 1 }}>
+              RECENT STARTS
+            </div>
+            {log.length === 0 ? (
+              <div style={{ color: '#667788', fontSize: 11, lineHeight: 1.4 }}>
+                Large starting values will appear here and in the table.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {log.slice(0, 8).map((entry, i) => (
+                  <button
+                    key={`${entry.start}-${entry.steps}-${i}`}
+                    type="button"
+                    onClick={() => {
+                      updateGridStart(entry.start);
+                      addNumberVal(entry.start);
+                    }}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr auto',
+                      gap: 6,
+                      alignItems: 'center',
+                      width: '100%',
+                      background: '#162040',
+                      border: '1px solid #29406a',
+                      color: '#ddeeff',
+                      borderRadius: 4,
+                      padding: '5px 7px',
+                      fontSize: 11,
+                      textAlign: 'left',
+                    }}>
+                    <span>{formatValue(entry.start)}</span>
+                    <span style={{ color: OUTCOME_COLOR[entry.outcome], fontSize: 10 }}>{OUTCOME_LABEL[entry.outcome]}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {Array.from({ length: gridCount }, (_, block) => {
+            const blockStart = gridStart + block * GRID_BLOCK_SIZE;
+            const blockEnd = blockStart + GRID_BLOCK_SIZE - 1;
+            return (
+            <div key={blockStart} style={{ marginBottom: 10 }}>
               <div style={{ color: '#99bbdd', fontSize: 11, textAlign: 'center', marginBottom: 4 }}>
-                {block === 0 ? '1 – 100' : '101 – 200'}
+                {formatValue(blockStart)} - {formatValue(blockEnd)}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: 2 }}>
-                {Array.from({ length: 100 }, (_, i) => block * 100 + i + 1).map(n => {
+                {Array.from({ length: GRID_BLOCK_SIZE }, (_, i) => blockStart + i).map(n => {
                   const hit = visitedNums.has(n);
                   return (
                     <button key={n} type="button" style={{
@@ -940,18 +1345,18 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
                 })}
               </div>
             </div>
-          ))}
+          );})}
 
           <div style={{
             marginTop: 6,
             marginBottom: 8,
             color: '#ff3b30',
-            fontSize: 25,
+            fontSize: 20,
             fontWeight: 700,
             lineHeight: 1.18,
             fontFamily: 'Trebuchet MS, Segoe UI, sans-serif',
           }}>
-            Click any grid number to add it as a starting value.
+            Use the grid window controls to jump anywhere. Larger values stay visible in Recent Starts and the table.
           </div>
 
           <div style={{
