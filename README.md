@@ -10,13 +10,14 @@ An interactive visualization tool for exploring parameterized sequence rules thr
 
 **New in v2 (March 22, 2026):**
 
-- **Visible Steps Control** - Dynamic stepper to control how many sequence steps display (1-9999)
-  - Large, easy-to-click arrows (▲/▼) positioned for accessibility
+- **Visible Steps Control** - Clean stepper widget to control sequence display length (1-9999, default: 50)
+  - Large, easy-to-click arrows (▲/▼) positioned in top-left canvas area
   - Visual feedback: arrows highlight yellow when clicked
   - Audio feedback: satisfying click sound on each press
   - Type directly in the circle to jump to any value
+  - Starts at 50 steps for pedagogical discovery—students increase it to explore cycle behavior
   - Extend cycles to see infinite repetition (e.g., 1↔2↔1↔2... for 100+ steps)
-  - Reduce steps to see only early sequence behavior
+  - Hover tooltip explains purpose without cluttering canvas
 - **Show Cycles Layout** - Toggle to arrange cycle nodes in separate circular groups
   - Clearer visualization of cycle structure vs path-to-cycle nodes
   - Multiple cycles stack vertically when present
