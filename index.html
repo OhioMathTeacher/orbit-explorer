@@ -9,7 +9,7 @@
   <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
-      var BUILD = 'march22-2026-v2';
+      var BUILD = 'march22-2026-v3';
       var params = new URLSearchParams(window.location.search);
       if (params.get('fr') !== BUILD || !params.has('cb')) {
         params.set('fr', BUILD);
@@ -977,7 +977,7 @@ function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, h
     // Label — scale font with node size
     const label = val > 9999 ? String(val).slice(0, 4) + '…' : String(val);
     const fs    = Math.max(8, Math.min(14, Math.round(r * 0.75)));
-    ctx.fillStyle    = 'white';
+    ctx.fillStyle    = 'black';
     ctx.font         = `bold ${fs}px monospace`;
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
