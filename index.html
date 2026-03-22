@@ -987,6 +987,47 @@ function App() {
     }
   }
 
+  function downloadCasesTable() {
+    const now = new Date();
+    const dateStr = now.toISOString().substring(0, 10);
+    const timestamp = now.toISOString().replace('T', ' ').substring(0, 19);
+    
+    // CSV format for easy import into spreadsheets
+    let csv = `# Orbit Explorer Cases Table\n`;
+    csv += `# Date: ${timestamp}\n`;
+    csv += `# Current Parameters: m=${m}, b=${a}, d=${d}\n\n`;
+    
+    // Saved Cases section
+    if (savedCases.length > 0) {
+      csv += `Saved Cases\n`;
+      csv += `m,b,d,Start,Outcome,Steps,Peak\n`;
+      savedCases.forEach(entry => {
+        csv += `${entry.m},${entry.a},${entry.d},${entry.start},${t(`outcomes.${entry.outcome}`)},${entry.steps},${entry.maxValue}\n`;
+      });
+      csv += `\n`;
+    }
+    
+    // Recent Results section
+    if (log.length > 0) {
+      csv += `Recent Results\n`;
+      csv += `Start,Outcome,Steps,Peak\n`;
+      log.forEach(entry => {
+        csv += `${entry.start},${t(`outcomes.${entry.outcome}`)},${entry.steps},${entry.maxValue}\n`;
+      });
+    }
+    
+    // Create download
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `orbit-explorer-cases-${dateStr}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   async function sendChat() {
     const text = chatInput.trim();
     if (!text || chatLoading) return;
@@ -1579,10 +1620,24 @@ function App() {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <span style={{ color: uiTheme.titleText, fontWeight: 'bold', fontSize: 14 }}>{t('cases')}</span>
-              <button onClick={() => setShowDataTable(false)} style={{
-                background: 'transparent', border: `1px solid ${uiTheme.borderStrong}`,
-                color: uiTheme.textMuted, borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer'
-              }}>{t('close')}</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={downloadCasesTable} style={{
+                  background: 'linear-gradient(135deg, #2f7a44 0%, #49a95f 100%)',
+                  border: 'none',
+                  color: 'white',
+                  borderRadius: 4,
+                  padding: '4px 12px',
+                  fontSize: 11,
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                }}>
+                  💾 Download Cases
+                </button>
+                <button onClick={() => setShowDataTable(false)} style={{
+                  background: 'transparent', border: `1px solid ${uiTheme.borderStrong}`,
+                  color: uiTheme.textMuted, borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer'
+                }}>{t('close')}</button>
+              </div>
             </div>
             <div style={{ color: uiTheme.textMuted, fontSize: 11, lineHeight: 1.45, marginBottom: 10 }}>
               {t('casesExplanation')}
