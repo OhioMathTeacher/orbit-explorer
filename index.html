@@ -186,6 +186,8 @@ const TRANSLATIONS = {
     red: 'red',
     greenShows: 'Green shows smaller values; red shows larger values.',
     glowingNodes: 'Glowing nodes mark detected cycle values.',
+    visibleSteps: 'Visible Steps',
+    stepsHelp: 'Control how many steps of each sequence are displayed. Increase to see cycle repetitions, decrease to see early steps only.',
     addValueTitle: 'Add {value}',
     startLimitAbove: "Start values above {limit} are outside the applet's reliable range.",
     startLimitUnsafe: 'That value is larger than JavaScript can track reliably as an exact integer.',
@@ -269,6 +271,8 @@ const TRANSLATIONS = {
     red: 'rojo',
     greenShows: 'El verde muestra valores mas pequenos; el rojo muestra valores mas grandes.',
     glowingNodes: 'Los nodos brillantes marcan valores de ciclo detectados.',
+    visibleSteps: 'Pasos visibles',
+    stepsHelp: 'Controla cuantos pasos de cada secuencia se muestran. Aumenta para ver repeticiones de ciclo, disminuye para ver solo los primeros pasos.',
     addValueTitle: 'Agregar {value}',
     startLimitAbove: 'Los valores iniciales mayores que {limit} estan fuera del rango confiable de la app.',
     startLimitUnsafe: 'Ese valor es mas grande de lo que JavaScript puede seguir de forma confiable como entero exacto.',
@@ -352,6 +356,8 @@ const TRANSLATIONS = {
     red: '红色',
     greenShows: '绿色表示较小的数值；红色表示较大的数值。',
     glowingNodes: '发光节点表示检测到的循环数值。',
+    visibleSteps: '可见步数',
+    stepsHelp: '控制每个序列显示多少步。增加以查看循环重复，减少以仅查看早期步骤。',
     addValueTitle: '添加 {value}',
     startLimitAbove: '大于 {limit} 的起始值超出了本程序的可靠范围。',
     startLimitUnsafe: '这个值已经大到 JavaScript 无法可靠地精确表示为整数。',
@@ -1027,6 +1033,7 @@ function App() {
   const edgesRef  = useRef([]);
   const cyclesRef = useRef(new Set());
   const startNodesRef = useRef(new Set());
+  const sequencesRef = useRef([]); // Store all explored sequences for step filtering
   const canvasRef = useRef(null);
   const dragStateRef = useRef(null);
   const paramsRef = useRef({ m, a, d });
@@ -1047,6 +1054,7 @@ function App() {
   const [showGrid, setShowGrid] = useState(true);
   const [showCycleLayout, setShowCycleLayout] = useState(false);
   const [useLightTheme, setUseLightTheme] = useState(false);
+  const [maxVisibleSteps, setMaxVisibleSteps] = useState(9999);
   const [language, setLanguage] = useState(() => localStorage.getItem('orbit_language') || 'en');
 
   // ── Chat state ───────────────────────────────────────────────────────────────
@@ -1249,6 +1257,13 @@ function App() {
   useEffect(() => { themeRef.current = useLightTheme ? THEME_PRESETS.light : THEME_PRESETS.dark; }, [useLightTheme]);
   useEffect(() => { showGridRef.current = showGrid; }, [showGrid]);
   useEffect(() => { showCycleLayoutRef.current = showCycleLayout; }, [showCycleLayout]);
+  
+  // Rebuild graph when maxVisibleSteps changes
+  useEffect(() => {
+    if (sequencesRef.current.length > 0) {
+      rebuildGraphFromSequences();
+    }
+  }, [maxVisibleSteps]);
 
   // Load initial example sequence on mount
   useEffect(() => {
@@ -1298,11 +1313,80 @@ function App() {
     return () => { alive = false; cancelAnimationFrame(rafRef.current); };
   }, []);
 
+  function rebuildGraphFromSequences() {
+    const cvs = canvasRef.current;
+    const W = cvs?.width  ?? 900;
+    const H = cvs?.height ?? 560;
+    
+    // Clear existing nodes and edges
+    const existingPositions = new Map(nodesRef.current);
+    nodesRef.current = new Map();
+    edgesRef.current = [];
+    cyclesRef.current = new Set();
+    startNodesRef.current = new Set();
+    
+    const now = Date.now();
+    
+    // Rebuild from stored sequences
+    for (const seqData of sequencesRef.current) {
+      const { seq, outcome, cycleAt, startVal } = seqData;
+      
+      // Extend sequence if it enters a cycle and maxVisibleSteps > seq.length
+      let extendedSeq = [...seq];
+      if ((outcome === 'cycle' || outcome === 'converge') && cycleAt >= 0 && maxVisibleSteps > seq.length) {
+        const cycle = seq.slice(cycleAt);
+        const needed = maxVisibleSteps - seq.length;
+        for (let i = 0; i < needed; i++) {
+          extendedSeq.push(cycle[i % cycle.length]);
+        }
+      }
+      
+      const limited = extendedSeq.slice(0, Math.min(maxVisibleSteps, MAX_NODES));
+      
+      // Mark start node
+      startNodesRef.current.add(startVal);
+      
+      // Add nodes (preserving positions if they exist)
+      for (const v of limited) {
+        if (!nodesRef.current.has(v)) {
+          const existing = existingPositions.get(v);
+          nodesRef.current.set(v, existing || {
+            x:  W / 2 + (Math.random() - 0.5) * 250,
+            y:  H / 2 + (Math.random() - 0.5) * 250,
+            vx: (Math.random() - 0.5) * 3,
+            vy: (Math.random() - 0.5) * 3,
+            birthTime: now,
+            pinned: false,
+            dragging: false,
+          });
+        }
+      }
+      
+      // Add edges (avoid duplicates)
+      const edgeSet = new Set(edgesRef.current.map(e => `${e.from}:${e.to}`));
+      for (let i = 0; i < limited.length - 1; i++) {
+        const key = `${limited[i]}:${limited[i + 1]}`;
+        if (!edgeSet.has(key)) {
+          edgesRef.current.push({ from: limited[i], to: limited[i + 1] });
+          edgeSet.add(key);
+        }
+      }
+      
+      // Mark cycle nodes
+      if ((outcome === 'cycle' || outcome === 'converge') && cycleAt >= 0) {
+        for (let i = cycleAt; i < Math.min(extendedSeq.length, maxVisibleSteps); i++) {
+          cyclesRef.current.add(extendedSeq[i]);
+        }
+      }
+    }
+  }
+
   function reset() {
     nodesRef.current      = new Map();
     edgesRef.current      = [];
     cyclesRef.current     = new Set();
     startNodesRef.current = new Set();
+    sequencesRef.current  = [];
     // Keep log (Recent Results) and savedCases for research data
     // Only clear visual graph and grid highlights
     setVisitedNums(new Set());
@@ -1448,47 +1532,12 @@ function App() {
     focusGridOnValue(val);
     const { m, a, d } = paramsRef.current;
     const { seq, outcome, cycleAt, maxValue } = computeSeq(val, m, a, d);
-    const limited = seq.slice(0, MAX_NODES);
-
-    const cvs = canvasRef.current;
-    const W = cvs?.width  ?? 900;
-    const H = cvs?.height ?? 560;
-
-    // Mark the starting value as an anchor node
-    startNodesRef.current.add(val);
-
-    // Add new nodes with random starting positions near center
-    const now = Date.now();
-    for (const v of limited) {
-      if (!nodesRef.current.has(v)) {
-        nodesRef.current.set(v, {
-          x:  W / 2 + (Math.random() - 0.5) * 250,
-          y:  H / 2 + (Math.random() - 0.5) * 250,
-          vx: (Math.random() - 0.5) * 3,
-          vy: (Math.random() - 0.5) * 3,
-          birthTime: now,
-          pinned: false,
-          dragging: false,
-        });
-      }
-    }
-
-    // Add edges (avoid duplicates)
-    const edgeSet = new Set(edgesRef.current.map(e => `${e.from}:${e.to}`));
-    for (let i = 0; i < limited.length - 1; i++) {
-      const key = `${limited[i]}:${limited[i + 1]}`;
-      if (!edgeSet.has(key)) {
-        edgesRef.current.push({ from: limited[i], to: limited[i + 1] });
-        edgeSet.add(key);
-      }
-    }
-
-    // Mark cycle nodes with yellow glow
-    if ((outcome === 'cycle' || outcome === 'converge') && cycleAt >= 0) {
-      for (let i = cycleAt; i < seq.length; i++) {
-        cyclesRef.current.add(seq[i]);
-      }
-    }
+    
+    // Store the sequence for later filtering/extending
+    sequencesRef.current.push({ seq, outcome, cycleAt, maxValue, startVal: val, m, a, d });
+    
+    // Rebuild graph with current step limit
+    rebuildGraphFromSequences();
 
     if (outcome === 'diverge') {
       setOverflow({ start: val, steps: seq.length - 1, maxValue });
@@ -1832,6 +1881,108 @@ function App() {
               cursor: 'help',
             }}>
             ?
+          </button>
+        </div>
+
+        {/* Visible Steps Control - Bottom Left */}
+        <div style={{
+          position: 'absolute',
+          bottom: 20,
+          left: 20,
+          zIndex: 5,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 4,
+        }}>
+          <button
+            onClick={() => setMaxVisibleSteps(Math.min(9999, maxVisibleSteps + 1))}
+            style={{
+              width: 32,
+              height: 24,
+              background: uiTheme.overlayBg,
+              border: `1px solid ${uiTheme.borderStrong}`,
+              borderRadius: 4,
+              color: uiTheme.textPrimary,
+              fontSize: 16,
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+            }}>
+            ▲
+          </button>
+          <div style={{
+            width: 80,
+            height: 80,
+            borderRadius: '50%',
+            background: uiTheme.overlayBg,
+            border: `2px solid ${uiTheme.borderStrong}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            position: 'relative',
+          }}>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={maxVisibleSteps}
+              onChange={(e) => {
+                const val = parseInt(e.target.value);
+                if (!isNaN(val) && val > 0 && val <= 9999) {
+                  setMaxVisibleSteps(val);
+                }
+              }}
+              style={{
+                width: '100%',
+                height: '100%',
+                borderRadius: '50%',
+                background: 'transparent',
+                border: 'none',
+                color: uiTheme.textPrimary,
+                fontSize: 28,
+                fontWeight: 'bold',
+                fontFamily: 'monospace',
+                textAlign: 'center',
+                cursor: 'pointer',
+              }}
+            />
+            <div style={{
+              position: 'absolute',
+              bottom: -24,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              whiteSpace: 'nowrap',
+              color: uiTheme.textSecondary,
+              fontSize: 10,
+              fontWeight: 'bold',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}>
+              {t('visibleSteps')}
+            </div>
+          </div>
+          <button
+            onClick={() => setMaxVisibleSteps(Math.max(1, maxVisibleSteps - 1))}
+            style={{
+              width: 32,
+              height: 24,
+              background: uiTheme.overlayBg,
+              border: `1px solid ${uiTheme.borderStrong}`,
+              borderRadius: 4,
+              color: uiTheme.textPrimary,
+              fontSize: 16,
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+            }}>
+            ▼
           </button>
         </div>
 
