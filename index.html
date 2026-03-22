@@ -9,7 +9,7 @@
   <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
-      var BUILD = '1774216101';
+      var BUILD = '1774216101-r2';
       var params = new URLSearchParams(window.location.search);
       if (params.get('fr') !== BUILD || !params.has('cb')) {
         params.set('fr', BUILD);
@@ -1005,9 +1005,11 @@ const OUTCOME_LABEL = {
 function App() {
   const GRID_BLOCK_SIZE = 100;
 
-  // Read URL params: ?m=5&a=1&d=2
+  // Read URL params: ?m=5&b=1&d=2 (legacy ?a= still supported)
   const sp = new URLSearchParams(window.location.search);
-  const urlM = sp.get('m'), urlA = sp.get('a'), urlD = sp.get('d');
+  const urlM = sp.get('m');
+  const urlA = sp.get('b') ?? sp.get('a');
+  const urlD = sp.get('d');
 
   const seed   = parseInt(sp.get('seed') ?? '27');
   const urlKey = sp.get('key') ?? '';
@@ -1183,12 +1185,12 @@ function App() {
     // Create download
     const blob = new Blob([transcript], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `orbit-explorer-chat-${now.toISOString().slice(0,19).replace(/:/g,'-')}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const downloadLink = document.createElement('a');
+    downloadLink.href = url;
+    downloadLink.download = `orbit-explorer-chat-${now.toISOString().slice(0,19).replace(/:/g,'-')}.txt`;
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
     URL.revokeObjectURL(url);
 
     // Save to GitHub if token is configured
@@ -1233,12 +1235,12 @@ function App() {
     // Create download
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `orbit-explorer-cases-${now.toISOString().slice(0,19).replace(/:/g,'-')}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const downloadLink = document.createElement('a');
+    downloadLink.href = url;
+    downloadLink.download = `orbit-explorer-cases-${now.toISOString().slice(0,19).replace(/:/g,'-')}.csv`;
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
     URL.revokeObjectURL(url);
   }
 
