@@ -9,7 +9,7 @@
   <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
-      var BUILD = 'march22-2026-v3';
+      var BUILD = 'march22-2026-v4';
       var params = new URLSearchParams(window.location.search);
       if (params.get('fr') !== BUILD || !params.has('cb')) {
         params.set('fr', BUILD);
@@ -2212,7 +2212,8 @@ function App() {
         }}>
           {apiKey ? detectChatProvider(apiKey) : null}
           <div style={{ padding: '8px 12px', borderBottom: `1px solid ${uiTheme.border}`,
-            color: uiTheme.titleText, fontWeight: 'bold', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            color: uiTheme.titleText, fontWeight: 'bold', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+            title="ZhengGPT is an AI thinking partner to help you interpret patterns and form conjectures. It's not an answer source - you must verify its claims with applet evidence.">
             <span>ZhengGPT {!apiKey && <span style={{ color: '#ff7755', fontSize: 11 }}> - {t('noKey')}</span>}</span>
             {apiKey && (
               <button onClick={clearApiKey} style={{
@@ -2341,7 +2342,9 @@ function App() {
           <div style={{
             color: uiTheme.titleText, fontWeight: 'bold', fontSize: 12,
             textAlign: 'center', letterSpacing: 2, marginBottom: 8,
-          }}>{t('dataReferenceGrids')}</div>
+            cursor: 'help',
+          }}
+          title="Click any number in the grids to add it to your exploration. Highlighted numbers show which values you've already tested.">{t('dataReferenceGrids')}</div>
 
           <div style={{
             marginBottom: 12,
