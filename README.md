@@ -10,8 +10,10 @@ An interactive visualization tool for exploring parameterized sequence rules thr
 
 **New in v2 (March 22, 2026):**
 
-- **Visible Steps Control** - Bottom-left stepper to control how many sequence steps display (1-9999)
-  - Increment/decrement by clicking ▲/▼
+- **Visible Steps Control** - Dynamic stepper to control how many sequence steps display (1-9999)
+  - Large, easy-to-click arrows (▲/▼) positioned for accessibility
+  - Visual feedback: arrows highlight yellow when clicked
+  - Audio feedback: satisfying click sound on each press
   - Type directly in the circle to jump to any value
   - Extend cycles to see infinite repetition (e.g., 1↔2↔1↔2... for 100+ steps)
   - Reduce steps to see only early sequence behavior

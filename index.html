@@ -9,7 +9,7 @@
   <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
-      var BUILD = '3441dd0-r2';
+      var BUILD = '3441dd0-r3';
       var params = new URLSearchParams(window.location.search);
       if (params.get('fr') !== BUILD || !params.has('cb')) {
         params.set('fr', BUILD);
@@ -1085,6 +1085,32 @@ function App() {
     });
   }, [language]);
 
+  // ── Audio feedback for UI clicks ─────────────────────────────────────────────
+  const playClickSound = () => {
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.frequency.value = 800; // Higher frequency for a click sound
+      oscillator.type = 'sine';
+      
+      gainNode.gain.setValueAtTime(0.15, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.05);
+      
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.05);
+      
+      // Clean up
+      setTimeout(() => audioContext.close(), 100);
+    } catch (e) {
+      // Silently fail if audio context not available
+    }
+  };
+
   function saveApiKey(key) {
     const trimmed = key.trim();
     setApiKey(trimmed);
@@ -1885,106 +1911,133 @@ function App() {
         </div>
 
         {/* Visible Steps Control - Bottom Left */}
-        <div style={{
-          position: 'absolute',
-          bottom: 20,
-          left: 20,
-          zIndex: 5,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 4,
-        }}>
-          <button
-            onClick={() => setMaxVisibleSteps(Math.min(9999, maxVisibleSteps + 1))}
-            style={{
-              width: 32,
-              height: 24,
-              background: uiTheme.overlayBg,
-              border: `1px solid ${uiTheme.borderStrong}`,
-              borderRadius: 4,
-              color: uiTheme.textPrimary,
-              fontSize: 16,
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-            }}>
-            ▲
-          </button>
-          <div style={{
-            width: 80,
-            height: 80,
-            borderRadius: '50%',
-            background: uiTheme.overlayBg,
-            border: `2px solid ${uiTheme.borderStrong}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-            position: 'relative',
-          }}>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={maxVisibleSteps}
-              onChange={(e) => {
-                const val = parseInt(e.target.value);
-                if (!isNaN(val) && val > 0 && val <= 9999) {
-                  setMaxVisibleSteps(val);
-                }
-              }}
-              style={{
-                width: '100%',
-                height: '100%',
-                borderRadius: '50%',
-                background: 'transparent',
-                border: 'none',
-                color: uiTheme.textPrimary,
-                fontSize: 28,
-                fontWeight: 'bold',
-                fontFamily: 'monospace',
-                textAlign: 'center',
-                cursor: 'pointer',
-              }}
-            />
+        {/* Visible Steps Control - Moved Up, Larger Arrows, Click Feedback */}
+        {(() => {
+          const [arrowUpActive, setArrowUpActive] = React.useState(false);
+          const [arrowDownActive, setArrowDownActive] = React.useState(false);
+          return (
             <div style={{
               position: 'absolute',
-              bottom: -24,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              whiteSpace: 'nowrap',
-              color: uiTheme.textSecondary,
-              fontSize: 10,
-              fontWeight: 'bold',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-            }}>
-              {t('visibleSteps')}
-            </div>
-          </div>
-          <button
-            onClick={() => setMaxVisibleSteps(Math.max(1, maxVisibleSteps - 1))}
-            style={{
-              width: 32,
-              height: 24,
-              background: uiTheme.overlayBg,
-              border: `1px solid ${uiTheme.borderStrong}`,
-              borderRadius: 4,
-              color: uiTheme.textPrimary,
-              fontSize: 16,
-              fontWeight: 'bold',
-              cursor: 'pointer',
+              top: 100, // moved up from bottom
+              left: 32,
+              zIndex: 5,
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+              gap: 8,
             }}>
-            ▼
-          </button>
-        </div>
+              <button
+                onMouseDown={() => setArrowUpActive(true)}
+                onMouseUp={() => setArrowUpActive(false)}
+                onMouseLeave={() => setArrowUpActive(false)}
+                onClick={() => {
+                  playClickSound();
+                  setMaxVisibleSteps(Math.min(9999, maxVisibleSteps + 1));
+                }}
+                style={{
+                  width: 54,
+                  height: 44,
+                  background: arrowUpActive ? '#ffe066' : uiTheme.overlayBg,
+                  border: `2px solid ${uiTheme.borderStrong}`,
+                  borderRadius: 8,
+                  color: uiTheme.textPrimary,
+                  fontSize: 32,
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+                  transition: 'background 0.12s',
+                  userSelect: 'none',
+                }}
+                aria-label={t('increaseVisibleSteps') || 'Increase visible steps'}
+              >
+                ▲
+              </button>
+              <div style={{
+                width: 100,
+                height: 100,
+                borderRadius: '50%',
+                background: uiTheme.overlayBg,
+                border: `3px solid ${uiTheme.borderStrong}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 6px 24px rgba(0,0,0,0.4)',
+                position: 'relative',
+              }}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={maxVisibleSteps}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    if (!isNaN(val) && val > 0 && val <= 9999) {
+                      setMaxVisibleSteps(val);
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    borderRadius: '50%',
+                    background: 'transparent',
+                    border: 'none',
+                    color: uiTheme.textPrimary,
+                    fontSize: 36,
+                    fontWeight: 'bold',
+                    fontFamily: 'monospace',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                  }}
+                />
+                <div style={{
+                  position: 'absolute',
+                  bottom: -28,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  whiteSpace: 'nowrap',
+                  color: uiTheme.textSecondary,
+                  fontSize: 12,
+                  fontWeight: 'bold',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}>
+                  {t('visibleSteps')}
+                </div>
+              </div>
+              <button
+                onMouseDown={() => setArrowDownActive(true)}
+                onMouseUp={() => setArrowDownActive(false)}
+                onMouseLeave={() => setArrowDownActive(false)}
+                onClick={() => {
+                  playClickSound();
+                  setMaxVisibleSteps(Math.max(1, maxVisibleSteps - 1));
+                }}
+                style={{
+                  width: 54,
+                  height: 44,
+                  background: arrowDownActive ? '#ffe066' : uiTheme.overlayBg,
+                  border: `2px solid ${uiTheme.borderStrong}`,
+                  borderRadius: 8,
+                  color: uiTheme.textPrimary,
+                  fontSize: 32,
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+                  transition: 'background 0.12s',
+                  userSelect: 'none',
+                }}
+                aria-label={t('decreaseVisibleSteps') || 'Decrease visible steps'}
+              >
+                ▼
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Data Table Overlay */}
         {showDataTable && (
