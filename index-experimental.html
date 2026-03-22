@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>Collatz Variant Explorer</title>
+  <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
       var BUILD = 'b3854ca-r1';
@@ -64,6 +64,354 @@ const PARAM_COLORS = {
   a: '#ffb347',
   d: '#6bb7ff',
 };
+const LANGUAGES = [
+  { value: 'en', label: 'English' },
+  { value: 'es', label: 'Espanol' },
+  { value: 'zh-Hans', label: '简体中文' },
+];
+const RESPONSE_LANGUAGE_NAMES = {
+  en: 'English',
+  es: 'Spanish',
+  'zh-Hans': 'Simplified Chinese',
+};
+const TRANSLATIONS = {
+  en: {
+    appName: 'Orbit Explorer',
+    language: 'Language',
+    singleStartValue: 'Single start value',
+    add: 'Add',
+    reset: 'Reset',
+    cases: 'Cases',
+    saveLatestCase: 'Save Latest Case',
+    latestCaseSaved: 'Latest Case Saved',
+    saveLatestCaseDisabled: 'Save Latest Case',
+    saveCaseHelp: 'Save the most recent result here, or open Cases and save any row from Recent Results.',
+    valueLimitReached: 'VALUE LIMIT REACHED',
+    startingValueExceeded: 'Starting value {start} exceeded {max} after {steps} steps',
+    valueLimitExplanation: 'This is not an input error. The sequence kept growing, so the app stopped once it crossed the current exploration ceiling. Peak value reached: {maxValue}.',
+    continue: 'CONTINUE',
+    resetLayout: 'Reset Layout',
+    dragHelp: 'Drag any number ball to pin it in place. Reset Layout releases pinned nodes and lets the layout settle again.',
+    grid: 'Grid',
+    lightTheme: 'Light Theme',
+    close: 'Close',
+    recentResults: 'Recent Results',
+    savedCases: 'Saved Cases',
+    casesExplanation: 'Recent Results fill automatically every time you add a start value. Saved Cases are the examples students choose to keep for pattern-hunting.',
+    start: 'Start',
+    outcome: 'Outcome',
+    steps: 'Steps',
+    peak: 'Peak',
+    keep: 'Keep',
+    noResultsYet: 'No results yet. Add a starting value to create a case.',
+    save: 'Save',
+    saved: 'Saved',
+    clearSaved: 'Clear Saved',
+    remove: 'Remove',
+    noSavedCasesYet: 'No saved cases yet. Save a few interesting examples from Recent Results to compare patterns.',
+    enterApiKey: 'Enter your OpenRouter API key:',
+    saveKey: 'Save Key',
+    getFreeKeyAt: 'Get a free key at',
+    noKey: 'no key',
+    changeKey: 'Change Key',
+    zhengThinking: 'ZhengGPT is thinking...',
+    downloadChat: 'Download Chat',
+    askZheng: 'Ask ZhengGPT...',
+    send: 'Send',
+    dataReferenceGrids: 'DATA REFERENCE GRIDS',
+    gridWindow: 'GRID WINDOW',
+    startAt: 'Start at',
+    blocks: 'Blocks',
+    usePreviousNext: 'Use Previous/Next to move the visible window.',
+    previous: 'Previous',
+    next: 'Next',
+    recentStarts: 'RECENT STARTS',
+    largeValuesAppear: 'Large starting values will appear here and in the table.',
+    useGridControls: 'Use the grid window controls to jump anywhere. Larger values stay visible in Recent Starts and the table.',
+    colorScale: 'Color scale:',
+    green: 'green',
+    yellow: 'yellow',
+    orange: 'orange',
+    red: 'red',
+    greenShows: 'Green shows smaller values; red shows larger values.',
+    glowingNodes: 'Glowing nodes mark detected cycle values.',
+    addValueTitle: 'Add {value}',
+    startLimitAbove: "Start values above {limit} are outside the applet's reliable range.",
+    startLimitUnsafe: 'That value is larger than JavaScript can track reliably as an exact integer.',
+    startLimitInvalid: 'Enter a positive whole number within the supported range.',
+    transcriptTitle: 'ORBIT EXPLORER - CHAT TRANSCRIPT',
+    transcriptDate: 'Date/Time',
+    transcriptParameters: 'Parameters',
+    transcriptNumbersExplored: 'Numbers Explored',
+    transcriptSummary: 'EXPLORATION SUMMARY',
+    transcriptConversation: 'CONVERSATION WITH ZhengGPT',
+    transcriptEnd: 'End of transcript',
+    chatGreeting: "Hi! I'm here to help you think through what you're discovering. What patterns are you noticing in your sequences?",
+    outcomes: {
+      converge: 'converges -> 1',
+      cycle: 'enters cycle',
+      diverge: 'diverges',
+      noninteger: 'non-integer',
+      timeout: 'timed out',
+    },
+  },
+  es: {
+    appName: 'Orbit Explorer',
+    language: 'Idioma',
+    singleStartValue: 'Valor inicial',
+    add: 'Agregar',
+    reset: 'Reiniciar',
+    cases: 'Casos',
+    saveLatestCase: 'Guardar ultimo caso',
+    latestCaseSaved: 'Ultimo caso guardado',
+    saveLatestCaseDisabled: 'Guardar ultimo caso',
+    saveCaseHelp: 'Guarda aqui el resultado mas reciente o abre Casos para guardar cualquier fila de Resultados recientes.',
+    valueLimitReached: 'LIMITE DE VALOR ALCANZADO',
+    startingValueExceeded: 'El valor inicial {start} supero {max} despues de {steps} pasos',
+    valueLimitExplanation: 'No es un error de entrada. La secuencia siguio creciendo, asi que la app se detuvo cuando cruzo el limite actual de exploracion. Valor maximo alcanzado: {maxValue}.',
+    continue: 'CONTINUAR',
+    resetLayout: 'Restablecer diseno',
+    dragHelp: 'Arrastra cualquier bola numerica para fijarla en su lugar. Restablecer diseno libera los nodos fijados y deja que el diseno se acomode otra vez.',
+    grid: 'Cuadricula',
+    lightTheme: 'Tema claro',
+    close: 'Cerrar',
+    recentResults: 'Resultados recientes',
+    savedCases: 'Casos guardados',
+    casesExplanation: 'Resultados recientes se llena automaticamente cada vez que agregas un valor inicial. Casos guardados contiene los ejemplos que el estudiantado decide conservar para buscar patrones.',
+    start: 'Inicio',
+    outcome: 'Resultado',
+    steps: 'Pasos',
+    peak: 'Maximo',
+    keep: 'Guardar',
+    noResultsYet: 'Todavia no hay resultados. Agrega un valor inicial para crear un caso.',
+    save: 'Guardar',
+    saved: 'Guardado',
+    clearSaved: 'Borrar guardados',
+    remove: 'Quitar',
+    noSavedCasesYet: 'Todavia no hay casos guardados. Guarda algunos ejemplos interesantes de Resultados recientes para comparar patrones.',
+    enterApiKey: 'Ingresa tu clave API de OpenRouter:',
+    saveKey: 'Guardar clave',
+    getFreeKeyAt: 'Consigue una clave gratis en',
+    noKey: 'sin clave',
+    changeKey: 'Cambiar clave',
+    zhengThinking: 'ZhengGPT esta pensando...',
+    downloadChat: 'Descargar chat',
+    askZheng: 'Preguntale a ZhengGPT...',
+    send: 'Enviar',
+    dataReferenceGrids: 'CUADRICULAS DE REFERENCIA',
+    gridWindow: 'VENTANA DE CUADRICULA',
+    startAt: 'Empezar en',
+    blocks: 'Bloques',
+    usePreviousNext: 'Usa Anterior/Siguiente para mover la ventana visible.',
+    previous: 'Anterior',
+    next: 'Siguiente',
+    recentStarts: 'INICIOS RECIENTES',
+    largeValuesAppear: 'Los valores iniciales grandes apareceran aqui y en la tabla.',
+    useGridControls: 'Usa los controles de la ventana para saltar a cualquier lugar. Los valores grandes siguen visibles en Inicios recientes y en la tabla.',
+    colorScale: 'Escala de color:',
+    green: 'verde',
+    yellow: 'amarillo',
+    orange: 'naranja',
+    red: 'rojo',
+    greenShows: 'El verde muestra valores mas pequenos; el rojo muestra valores mas grandes.',
+    glowingNodes: 'Los nodos brillantes marcan valores de ciclo detectados.',
+    addValueTitle: 'Agregar {value}',
+    startLimitAbove: 'Los valores iniciales mayores que {limit} estan fuera del rango confiable de la app.',
+    startLimitUnsafe: 'Ese valor es mas grande de lo que JavaScript puede seguir de forma confiable como entero exacto.',
+    startLimitInvalid: 'Ingresa un numero entero positivo dentro del rango permitido.',
+    transcriptTitle: 'TRANSCRIPCION DE ORBIT EXPLORER',
+    transcriptDate: 'Fecha/Hora',
+    transcriptParameters: 'Parametros',
+    transcriptNumbersExplored: 'Valores explorados',
+    transcriptSummary: 'RESUMEN DE EXPLORACION',
+    transcriptConversation: 'CONVERSACION CON ZhengGPT',
+    transcriptEnd: 'Fin de la transcripcion',
+    chatGreeting: 'Hola. Estoy aqui para ayudarte a pensar sobre lo que estas descubriendo. Que patrones notas en tus secuencias?',
+    outcomes: {
+      converge: 'converge -> 1',
+      cycle: 'entra en ciclo',
+      diverge: 'diverge',
+      noninteger: 'no entero',
+      timeout: 'se agoto el tiempo',
+    },
+  },
+  'zh-Hans': {
+    appName: 'Orbit Explorer',
+    language: '语言',
+    singleStartValue: '输入起始值',
+    add: '添加',
+    reset: '重置',
+    cases: '案例',
+    saveLatestCase: '保存最新案例',
+    latestCaseSaved: '最新案例已保存',
+    saveLatestCaseDisabled: '保存最新案例',
+    saveCaseHelp: '在这里保存最新结果，或者打开“案例”保存“最近结果”中的任意一行。',
+    valueLimitReached: '达到数值上限',
+    startingValueExceeded: '起始值 {start} 在 {steps} 步后超过了 {max}',
+    valueLimitExplanation: '这不是输入错误。序列持续增长，所以程序在超过当前探索上限时停止。达到的最大值是 {maxValue}。',
+    continue: '继续',
+    resetLayout: '重置布局',
+    dragHelp: '拖动任意数字球即可将它固定在当前位置。重置布局会释放固定节点，并让布局重新整理。',
+    grid: '网格',
+    lightTheme: '浅色主题',
+    close: '关闭',
+    recentResults: '最近结果',
+    savedCases: '已保存案例',
+    casesExplanation: '每次添加起始值时，“最近结果”都会自动更新。“已保存案例”用于保留学生想比较的有趣例子。',
+    start: '起始值',
+    outcome: '结果',
+    steps: '步数',
+    peak: '峰值',
+    keep: '保存',
+    noResultsYet: '还没有结果。先添加一个起始值来生成案例。',
+    save: '保存',
+    saved: '已保存',
+    clearSaved: '清空已保存',
+    remove: '删除',
+    noSavedCasesYet: '还没有保存的案例。请从“最近结果”中保存几个有趣的例子来比较模式。',
+    enterApiKey: '输入你的 OpenRouter API 密钥：',
+    saveKey: '保存密钥',
+    getFreeKeyAt: '可在此免费获取密钥：',
+    noKey: '无密钥',
+    changeKey: '更改密钥',
+    zhengThinking: 'ZhengGPT 正在思考……',
+    downloadChat: '下载聊天记录',
+    askZheng: '向 ZhengGPT 提问……',
+    send: '发送',
+    dataReferenceGrids: '参考网格',
+    gridWindow: '网格窗口',
+    startAt: '起始于',
+    blocks: '区块数',
+    usePreviousNext: '使用“上一页/下一页”移动当前可见窗口。',
+    previous: '上一页',
+    next: '下一页',
+    recentStarts: '最近起始值',
+    largeValuesAppear: '较大的起始值会显示在这里以及表格中。',
+    useGridControls: '使用网格窗口控件可跳转到任意位置。较大的数值会继续显示在“最近起始值”和表格中。',
+    colorScale: '颜色刻度：',
+    green: '绿色',
+    yellow: '黄色',
+    orange: '橙色',
+    red: '红色',
+    greenShows: '绿色表示较小的数值；红色表示较大的数值。',
+    glowingNodes: '发光节点表示检测到的循环数值。',
+    addValueTitle: '添加 {value}',
+    startLimitAbove: '大于 {limit} 的起始值超出了本程序的可靠范围。',
+    startLimitUnsafe: '这个值已经大到 JavaScript 无法可靠地精确表示为整数。',
+    startLimitInvalid: '请输入可靠范围内的正整数。',
+    transcriptTitle: 'ORBIT EXPLORER 聊天记录',
+    transcriptDate: '日期/时间',
+    transcriptParameters: '参数',
+    transcriptNumbersExplored: '已探索的起始值数量',
+    transcriptSummary: '探索摘要',
+    transcriptConversation: '与 ZhengGPT 的对话',
+    transcriptEnd: '记录结束',
+    chatGreeting: '你好。我会帮助你思考自己发现了什么。你在这些序列中注意到了哪些模式？',
+    outcomes: {
+      converge: '收敛到 1',
+      cycle: '进入循环',
+      diverge: '发散',
+      noninteger: '非整数',
+      timeout: '超时',
+    },
+  },
+};
+const THEME_PRESETS = {
+  dark: {
+    pageBg: '#131e3a',
+    topBarBg: '#0d1528',
+    panelBg: '#0a1020',
+    panelBgAlt: '#0f1a2a',
+    surfaceBg: '#162040',
+    surfaceBgMuted: '#101a31',
+    textPrimary: '#ffffff',
+    textSecondary: '#99bbee',
+    textMuted: '#7f93b0',
+    titleText: '#7aaaf0',
+    border: '#1e2f55',
+    borderStrong: '#3355aa',
+    overlayBg: 'rgba(10, 20, 40, 0.92)',
+    overlayBgSoft: 'rgba(10, 20, 40, 0.82)',
+    canvasBg: '#131e3a',
+    canvasGrid: 'rgba(40,60,100,0.4)',
+    canvasEdge: 'rgba(80, 140, 220, 0.5)',
+    canvasEdgeHead: 'rgba(80, 140, 220, 0.8)',
+    canvasWatermark: 'rgba(255,255,255,0.9)',
+    canvasAnnotation: 'rgba(255,255,255,0.82)',
+  },
+  light: {
+    pageBg: '#eef4ff',
+    topBarBg: '#dde9ff',
+    panelBg: '#f7faff',
+    panelBgAlt: '#edf3ff',
+    surfaceBg: '#ffffff',
+    surfaceBgMuted: '#e7efff',
+    textPrimary: '#11233f',
+    textSecondary: '#2b4f82',
+    textMuted: '#536c92',
+    titleText: '#2d62a8',
+    border: '#bdd0ef',
+    borderStrong: '#7399d9',
+    overlayBg: 'rgba(245, 249, 255, 0.94)',
+    overlayBgSoft: 'rgba(235, 243, 255, 0.9)',
+    canvasBg: '#f4f8ff',
+    canvasGrid: 'rgba(150,175,215,0.55)',
+    canvasEdge: 'rgba(70, 110, 185, 0.55)',
+    canvasEdgeHead: 'rgba(70, 110, 185, 0.82)',
+    canvasWatermark: 'rgba(24,46,84,0.82)',
+    canvasAnnotation: 'rgba(24,46,84,0.72)',
+  },
+};
+
+function interpolate(template, values) {
+  return template.replace(/\{(\w+)\}/g, (_, key) => values[key] ?? '');
+}
+
+function translate(language, key, values) {
+  const source = TRANSLATIONS[language] || TRANSLATIONS.en;
+  const fallback = TRANSLATIONS.en;
+  const result = key.split('.').reduce((acc, part) => acc && acc[part], source)
+    ?? key.split('.').reduce((acc, part) => acc && acc[part], fallback)
+    ?? key;
+  return values ? interpolate(result, values) : result;
+}
+
+function buildSystemPrompt(language) {
+  const responseLanguage = RESPONSE_LANGUAGE_NAMES[language] || RESPONSE_LANGUAGE_NAMES.en;
+  return `You are ZhengGPT, a mathematical thinking partner helping students investigate a parameterized sequence rule.
+
+CONTEXT - What the student sees in the applet:
+- An interactive graph showing sequences as connected nodes (bubbles) with arrows
+- Each starting number they enter creates a visual path through the graph
+- The rule is: f(n) = n/d (if even) or f(n) = mn + b (if odd), where m, b, and d are parameters they can adjust
+- Outcomes are automatically detected: converges to 1, enters a cycle, or diverges
+- A results log shows which numbers they've tested and what happened
+- They can click nodes to inspect them and view saved cases
+- There is a bright orange "Download Chat" button at the bottom of this chat panel that saves the conversation as a text file
+
+WHAT YOU CAN'T SEE:
+- You cannot see the visual graph or their data table
+- You don't know which specific numbers they've tried unless they tell you
+- You don't know their current m, b, and d parameter values unless they tell you
+
+YOUR ROLE:
+- Help them notice patterns in the data THEY describe to you
+- Ask questions that push them to test specific hypotheses
+- Never compute sequences yourself - the applet does that instantly
+- Never tell them what will happen - ask them to test it and report back
+- Never reveal this is related to the Collatz conjecture or mention "Collatz" by name
+- If they haven't told you their parameters or data, ask them to describe what they're seeing first
+- If they ask about saving/downloading the chat, tell them to click the bright orange "Download Chat" button at the bottom of the chat panel
+
+RESPONSE STYLE:
+- Keep answers short (2-4 sentences max)
+- Ask ONE focused question at a time
+- If they ask you to "just tell them," playfully refuse and redirect to what they could try next
+- Be encouraging when they make observations
+- Always respond in ${responseLanguage}, based on the language dropdown selected in the app
+
+REMEMBER: You're a thinking partner, not an oracle. Your job is to help them think through their own observations, not to give them answers or make claims about sequences you haven't seen.`;
+}
 
 function formatValue(value) {
   return Number.isFinite(value) ? value.toLocaleString() : String(value);
@@ -104,6 +452,31 @@ function drawFormulaLine(ctx, centerX, y, equationSegments, annotation, annotati
   ctx.fillText(annotation, cursorX, y);
 }
 
+function clampNodePosition(value, radius, max) {
+  return Math.max(radius + 2, Math.min(max - radius - 2, value));
+}
+
+function getNodeRadius(position, startNodes, now) {
+  const elapsed  = (now - position.birthTime) / 1000;
+  const popScale = 1 + 2.2 * Math.exp(-elapsed * 2.8);
+  const baseR    = startNodes.has(position.value) ? START_R : NODE_R;
+  return baseR * popScale;
+}
+
+function findNodeAt(nodes, startNodes, x, y, now) {
+  const entries = [...nodes.entries()].reverse();
+  for (const [value, position] of entries) {
+    position.value = value;
+    const radius = getNodeRadius(position, startNodes, now);
+    const dx = x - position.x;
+    const dy = y - position.y;
+    if (dx * dx + dy * dy <= radius * radius) {
+      return { value, position, radius };
+    }
+  }
+  return null;
+}
+
 function normalizeIntegerInput(value) {
   return String(value ?? '').replace(/[,_\s]/g, '');
 }
@@ -121,13 +494,13 @@ function parseSingleStartInput(rawValue) {
   return { kind: 'ok', value };
 }
 
-function getStartLimitWarning(rawValue) {
+function getStartLimitWarning(rawValue, language) {
   const parsed = parseSingleStartInput(rawValue);
   if (parsed.kind === 'above-limit') {
-    return `Start values above ${formatValue(RELIABLE_START_LIMIT)} are outside the applet's reliable range.`;
+    return translate(language, 'startLimitAbove', { limit: formatValue(RELIABLE_START_LIMIT) });
   }
   if (parsed.kind === 'unsafe') {
-    return 'That value is larger than JavaScript can track reliably as an exact integer.';
+    return translate(language, 'startLimitUnsafe');
   }
   return '';
 }
@@ -225,6 +598,13 @@ function physicsStep(nodes, edges, W, H) {
   const damp = 0.83;
   for (const v of vals) {
     const n  = nodes.get(v);
+    if (n.pinned || n.dragging) {
+      n.vx = 0;
+      n.vy = 0;
+      n.x = clampNodePosition(n.x, NODE_R, W);
+      n.y = clampNodePosition(n.y, NODE_R, H);
+      continue;
+    }
     n.vx = (n.vx + fx[v]) * damp;
     n.vy = (n.vy + fy[v]) * damp;
     n.x  = Math.max(NODE_R + 2, Math.min(W - NODE_R - 2, n.x + n.vx));
@@ -233,33 +613,35 @@ function physicsStep(nodes, edges, W, H) {
 }
 
 // ── Canvas rendering ─────────────────────────────────────────────────────────
-function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, hoveredNode) {
+function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, hoveredNode, theme, showGrid) {
   if (!canvas) return;
   const W = canvas.width, H = canvas.height;
   const ctx = canvas.getContext('2d');
 
   // Background
-  ctx.fillStyle = '#131e3a';
+  ctx.fillStyle = theme.canvasBg;
   ctx.fillRect(0, 0, W, H);
 
   // Subtle grid
-  ctx.strokeStyle = 'rgba(40,60,100,0.4)';
-  ctx.lineWidth = 1;
-  for (let x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-  for (let y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  if (showGrid) {
+    ctx.strokeStyle = theme.canvasGrid;
+    ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  }
 
   // Formula watermark — always visible behind the graph
   const sign = a >= 0 ? '+' : '−';
   const evenEquation = [
-    { text: 'f(n) = n / ', color: 'white' },
+    { text: 'f(n) = n / ', color: theme.canvasWatermark },
     { text: String(d), color: PARAM_COLORS.d },
   ];
   const oddEquation = [
-    { text: 'f(n) = ', color: 'white' },
+    { text: 'f(n) = ', color: theme.canvasWatermark },
     { text: String(m), color: PARAM_COLORS.m },
-    { text: 'n ', color: 'white' },
-    { text: sign, color: 'white' },
-    { text: ' ', color: 'white' },
+    { text: 'n ', color: theme.canvasWatermark },
+    { text: sign, color: theme.canvasWatermark },
+    { text: ' ', color: theme.canvasWatermark },
     { text: String(Math.abs(a)), color: PARAM_COLORS.a },
   ];
   ctx.save();
@@ -280,7 +662,7 @@ function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, h
   const formulaBottomPad = 12;
   ctx.font = `bold ${formulaSize}px monospace`;
   const formulaGap = Math.max(formulaSize + 24, Math.round(formulaSize * 1.9));
-  const annotationColor = 'rgba(255,255,255,0.82)';
+  const annotationColor = theme.canvasAnnotation;
   drawFormulaLine(ctx, W / 2, H - formulaBottomPad - formulaGap, evenEquation, '(n even)', annotationColor, annotationGap);
   drawFormulaLine(ctx, W / 2, H - formulaBottomPad, oddEquation, '(n odd)', annotationColor, annotationGap);
   ctx.restore();
@@ -300,7 +682,7 @@ function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, h
     ctx.beginPath();
     ctx.moveTo(nf.x, nf.y);
     ctx.lineTo(ex, ey);
-    ctx.strokeStyle = 'rgba(80, 140, 220, 0.5)';
+    ctx.strokeStyle = theme.canvasEdge;
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
@@ -311,7 +693,7 @@ function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, h
     ctx.lineTo(ex - 9 * Math.cos(angle - 0.45), ey - 9 * Math.sin(angle - 0.45));
     ctx.lineTo(ex - 9 * Math.cos(angle + 0.45), ey - 9 * Math.sin(angle + 0.45));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(80, 140, 220, 0.8)';
+    ctx.fillStyle = theme.canvasEdgeHead;
     ctx.fill();
   }
 
@@ -319,6 +701,8 @@ function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, h
   for (const [val, pos] of nodes) {
     const isCycle  = cycleNodes.has(val);
     const isStart  = startNodes.has(val);
+    const isPinned = !!pos.pinned;
+    const isDragging = !!pos.dragging;
 
     // Pop-in scale: new nodes spawn large and shrink to normal over ~1s
     const elapsed  = (now - pos.birthTime) / 1000;
@@ -343,10 +727,12 @@ function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, h
     ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
     ctx.fillStyle = valColor(val);
     ctx.fill();
-    ctx.strokeStyle = isCycle  ? 'rgba(255,215,50,0.9)'
-                    : isStart  ? 'rgba(140,200,255,0.9)'
-                    : 'rgba(255,255,255,0.18)';
-    ctx.lineWidth   = (isCycle || isStart) ? 2.5 : 1;
+    ctx.strokeStyle = isDragging ? 'rgba(255,255,255,0.98)'
+            : isPinned  ? 'rgba(170,230,255,0.98)'
+            : isCycle   ? 'rgba(255,215,50,0.9)'
+            : isStart   ? 'rgba(140,200,255,0.9)'
+            : 'rgba(255,255,255,0.18)';
+    ctx.lineWidth   = isDragging ? 3.5 : (isPinned || isCycle || isStart) ? 2.5 : 1;
     ctx.stroke();
 
     // Label — scale font with node size
@@ -407,7 +793,10 @@ function App() {
   const cyclesRef = useRef(new Set());
   const startNodesRef = useRef(new Set());
   const canvasRef = useRef(null);
+  const dragStateRef = useRef(null);
   const paramsRef = useRef({ m, a, d });
+  const themeRef = useRef(THEME_PRESETS.dark);
+  const showGridRef = useRef(true);
   const rafRef    = useRef(null);
   const hoveredNodeRef = useRef(null);
 
@@ -418,44 +807,15 @@ function App() {
   const [savedCases, setSavedCases] = useState([]);
   const [gridStart, setGridStart] = useState(1);
   const [gridCount, setGridCount] = useState(4);
+  const [isDraggingNode, setIsDraggingNode] = useState(false);
+  const [showGrid, setShowGrid] = useState(true);
+  const [useLightTheme, setUseLightTheme] = useState(false);
+  const [language, setLanguage] = useState(() => localStorage.getItem('orbit_language') || 'en');
 
   // ── Chat state ───────────────────────────────────────────────────────────────
-  const SYSTEM_PROMPT = `You are ZhengGPT, a mathematical thinking partner helping students investigate a parameterized sequence rule.
-
-CONTEXT - What the student sees in the applet:
-- An interactive graph showing sequences as connected nodes (bubbles) with arrows
-- Each starting number they enter creates a visual path through the graph
-- The rule is: f(n) = n/d (if even) or f(n) = mn + b (if odd), where m, b, and d are parameters they can adjust
-- Outcomes are automatically detected: converges to 1, enters a cycle, or diverges
-- A results log shows which numbers they've tested and what happened
-- They can click nodes to inspect them, add multiple numbers at once, and view a data table
-- There is a bright orange "💾 Download Chat" button at the bottom of this chat panel that saves our full conversation as a text file
-
-WHAT YOU CAN'T SEE:
-- You cannot see the visual graph or their data table
-- You don't know which specific numbers they've tried unless they tell you
-- You don't know their current m, b, and d parameter values unless they tell you
-
-YOUR ROLE:
-- Help them notice patterns in the data THEY describe to you
-- Ask questions that push them to test specific hypotheses
-- Never compute sequences yourself - the applet does that instantly
-- Never tell them what will happen - ask them to test it and report back
-- Never reveal this is related to the Collatz conjecture or mention "Collatz" by name
-- If they haven't told you their parameters or data, ask them to describe what they're seeing first
-- If they ask about saving/downloading the chat, tell them to click the bright orange "Download Chat" button at the bottom of the chat panel
-
-RESPONSE STYLE:
-- Keep answers short (2-4 sentences max)
-- Ask ONE focused question at a time
-- If they ask you to "just tell them," playfully refuse and redirect to what they could try next
-- Be encouraging when they make observations
-- Respond in whatever language they use
-
-REMEMBER: You're a thinking partner, not an oracle. Your job is to help them think through their own observations, not to give them answers or make claims about sequences you haven't seen.`;
-
+  const t = (key, values) => translate(language, key, values);
   const [chatMessages, setChatMessages] = useState([
-    { role: 'assistant', content: 'Hi! I\'m here to help you think through what you\'re discovering. What patterns are you noticing in your sequences?' }
+    { role: 'assistant', content: translate(language, 'chatGreeting') }
   ]);
   const [chatInput,   setChatInput]   = useState('');
   const [chatLoading, setChatLoading] = useState(false);
@@ -464,6 +824,21 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
+
+  useEffect(() => {
+    localStorage.setItem('orbit_language', language);
+  }, [language]);
+
+  useEffect(() => {
+    setInputWarning(prev => prev ? getStartLimitWarning(inputVal, language) : prev);
+  }, [language]);
+
+  useEffect(() => {
+    setChatMessages(prev => {
+      if (prev.length !== 1 || prev[0].role !== 'assistant') return prev;
+      return [{ role: 'assistant', content: translate(language, 'chatGreeting') }];
+    });
+  }, [language]);
 
   function saveApiKey(key) {
     const trimmed = key.trim();
@@ -502,22 +877,22 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
     
     // Create formatted transcript
     let transcript = `========================================\n`;
-    transcript += `COLLATZ VARIANT EXPLORER - CHAT TRANSCRIPT\n`;
+    transcript += `${t('transcriptTitle')}\n`;
     transcript += `========================================\n\n`;
-    transcript += `Date/Time: ${timestamp}\n`;
-    transcript += `Parameters: m=${m}, b=${a}, d=${d}\n`;
-    transcript += `Numbers Explored: ${log.length} starting values\n\n`;
+    transcript += `${t('transcriptDate')}: ${timestamp}\n`;
+    transcript += `${t('transcriptParameters')}: m=${m}, b=${a}, d=${d}\n`;
+    transcript += `${t('transcriptNumbersExplored')}: ${log.length}\n\n`;
     
     if (log.length > 0) {
-      transcript += `EXPLORATION SUMMARY:\n`;
+      transcript += `${t('transcriptSummary')}:\n`;
       transcript += `${'─'.repeat(40)}\n`;
       log.slice().reverse().forEach(entry => {
-        transcript += `  ${entry.start} → ${OUTCOME_LABEL[entry.outcome]} (${entry.steps} steps)\n`;
+        transcript += `  ${entry.start} -> ${t(`outcomes.${entry.outcome}`)} (${entry.steps} ${t('steps').toLowerCase()})\n`;
       });
       transcript += `\n`;
     }
     
-    transcript += `CONVERSATION WITH ZhengGPT:\n`;
+    transcript += `${t('transcriptConversation')}:\n`;
     transcript += `${'─'.repeat(40)}\n\n`;
     
     chatMessages.forEach((msg, i) => {
@@ -526,14 +901,14 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
     });
     
     transcript += `${'─'.repeat(40)}\n`;
-    transcript += `End of transcript\n`;
+    transcript += `${t('transcriptEnd')}\n`;
     
     // Create download
     const blob = new Blob([transcript], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `collatz-chat-${dateStr}.txt`;
+    a.download = `orbit-explorer-chat-${dateStr}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -541,7 +916,7 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
 
     // Save to GitHub if token is configured
     if (ghToken) {
-      const filename = `collatz-${now.toISOString().slice(0,19).replace(/:/g,'-')}.txt`;
+      const filename = `orbit-explorer-${now.toISOString().slice(0,19).replace(/:/g,'-')}.txt`;
       setGhSaveStatus('saving');
       const ok = await saveToGitHub(filename, transcript);
       setGhSaveStatus(ok ? 'saved' : 'error');
@@ -568,11 +943,11 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
           'HTTP-Referer': window.location.href,
-          'X-Title': 'Collatz Variant Explorer',
+          'X-Title': 'Orbit Explorer',
         },
         body: JSON.stringify({
           model: 'deepseek/deepseek-chat',
-          messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...newMessages],
+          messages: [{ role: 'system', content: buildSystemPrompt(language) }, ...newMessages],
           max_tokens: 200,
         }),
       });
@@ -580,13 +955,15 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
       const reply = data.choices?.[0]?.message?.content ?? 'Something went wrong. Try again.';
       setChatMessages(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch (e) {
-      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Network error. Check your connection.' }]);
+      setChatMessages(prev => [...prev, { role: 'assistant', content: language === 'es' ? 'Error de red. Revisa tu conexion.' : language === 'zh-Hans' ? '网络错误。请检查你的连接。' : 'Network error. Check your connection.' }]);
     }
     setChatLoading(false);
   }
 
 
   useEffect(() => { paramsRef.current = { m, a, d }; }, [m, a, d]);
+  useEffect(() => { themeRef.current = useLightTheme ? THEME_PRESETS.light : THEME_PRESETS.dark; }, [useLightTheme]);
+  useEffect(() => { showGridRef.current = showGrid; }, [showGrid]);
 
   // Load initial example sequence on mount
   useEffect(() => {
@@ -622,8 +999,9 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
       if (cvs && cvs.width > 0) {
         physicsStep(nodesRef.current, edgesRef.current, cvs.width, cvs.height);
         drawGraph(cvs, nodesRef.current, edgesRef.current,
-                  cyclesRef.current, startNodesRef.current, Date.now(),
-                  paramsRef.current.m, paramsRef.current.a, paramsRef.current.d, hoveredNodeRef.current);
+            cyclesRef.current, startNodesRef.current, Date.now(),
+            paramsRef.current.m, paramsRef.current.a, paramsRef.current.d,
+                  hoveredNodeRef.current, themeRef.current, showGridRef.current);
       }
       rafRef.current = requestAnimationFrame(tick);
     }
@@ -684,6 +1062,97 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
     setSavedCases(prev => prev.filter(entry => entry.key !== key));
   }
 
+  function resetLayout() {
+    const cvs = canvasRef.current;
+    const W = cvs?.width ?? 900;
+    const H = cvs?.height ?? 560;
+    for (const node of nodesRef.current.values()) {
+      node.pinned = false;
+      node.dragging = false;
+      node.vx = (Math.random() - 0.5) * 2;
+      node.vy = (Math.random() - 0.5) * 2;
+      node.x = clampNodePosition(node.x, NODE_R, W);
+      node.y = clampNodePosition(node.y, NODE_R, H);
+    }
+    dragStateRef.current = null;
+    setIsDraggingNode(false);
+  }
+
+  function getCanvasPoint(event) {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+  }
+
+  function handleCanvasPointerDown(event) {
+    const point = getCanvasPoint(event);
+    if (!point) return;
+    const hit = findNodeAt(nodesRef.current, startNodesRef.current, point.x, point.y, Date.now());
+    if (!hit) return;
+
+    const { value, position, radius } = hit;
+    position.dragging = true;
+    position.pinned = true;
+    position.vx = 0;
+    position.vy = 0;
+    dragStateRef.current = {
+      value,
+      pointerId: event.pointerId,
+      offsetX: point.x - position.x,
+      offsetY: point.y - position.y,
+      radius,
+    };
+    setIsDraggingNode(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  function handleCanvasPointerMove(event) {
+    const drag = dragStateRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const point = getCanvasPoint(event);
+    const canvas = canvasRef.current;
+    const position = nodesRef.current.get(drag.value);
+    if (!point || !canvas || !position) return;
+
+    position.x = clampNodePosition(point.x - drag.offsetX, NODE_R, canvas.width);
+    position.y = clampNodePosition(point.y - drag.offsetY, NODE_R, canvas.height);
+    position.vx = 0;
+    position.vy = 0;
+  }
+
+  function releaseDraggedNode(pointerId) {
+    const drag = dragStateRef.current;
+    if (!drag || drag.pointerId !== pointerId) return;
+    const position = nodesRef.current.get(drag.value);
+    if (position) {
+      position.dragging = false;
+      position.pinned = true;
+      position.vx = 0;
+      position.vy = 0;
+    }
+    dragStateRef.current = null;
+    setIsDraggingNode(false);
+  }
+
+  function handleCanvasPointerUp(event) {
+    releaseDraggedNode(event.pointerId);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function handleCanvasPointerCancel(event) {
+    releaseDraggedNode(event.pointerId);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
   function addNumberVal(val) {
     if (isNaN(val) || val <= 0 || val > MAX_START) return;
     focusGridOnValue(val);
@@ -708,6 +1177,8 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
           vx: (Math.random() - 0.5) * 3,
           vy: (Math.random() - 0.5) * 3,
           birthTime: now,
+          pinned: false,
+          dragging: false,
         });
       }
     }
@@ -748,7 +1219,7 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
   function addNumber() {
     const parsed = parseSingleStartInput(inputVal);
     if (parsed.kind !== 'ok') {
-      setInputWarning(getStartLimitWarning(inputVal) || 'Enter a positive whole number within the supported range.');
+      setInputWarning(getStartLimitWarning(inputVal, language) || t('startLimitInvalid'));
       return;
     }
     const val = parsed.value;
@@ -760,33 +1231,58 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
   function handleInputChange(e) {
     const nextValue = e.target.value;
     setInputVal(nextValue);
-    setInputWarning(getStartLimitWarning(nextValue));
+    setInputWarning(getStartLimitWarning(nextValue, language));
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
   const sign    = a >= 0 ? '+' : '−';
+  const uiTheme = useLightTheme ? THEME_PRESETS.light : THEME_PRESETS.dark;
+  const valueLimitTitle = t('valueLimitReached');
+  const valueLimitLines = valueLimitTitle.includes(' ') ? (() => {
+    const words = valueLimitTitle.split(' ');
+    return [words.slice(0, -1).join(' '), words.slice(-1).join(' ')];
+  })() : [valueLimitTitle];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: uiTheme.pageBg, color: uiTheme.textPrimary }}>
 
       {/* ── Top bar ── */}
       <div style={{
-        background: '#0d1528', padding: '8px 14px',
+        background: uiTheme.topBarBg, padding: '8px 14px',
         display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12,
-        borderBottom: '1px solid #1e2f55', flexShrink: 0,
+        borderBottom: `1px solid ${uiTheme.border}`, flexShrink: 0,
       }}>
-        <span style={{ color: '#7aaaf0', fontWeight: 'bold', fontSize: 15, whiteSpace: 'nowrap' }}>
-          Collatz Variant Explorer
+        <span style={{ color: uiTheme.titleText, fontWeight: 'bold', fontSize: 15, whiteSpace: 'nowrap' }}>
+          {t('appName')}
         </span>
 
-        <span style={{ color: '#99bbee', fontSize: 13, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-          <span style={{ color: 'white' }}>f(n) = n/</span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: uiTheme.textSecondary, fontSize: 12, whiteSpace: 'nowrap' }}>
+          <span>{t('language')}</span>
+          <select
+            value={language}
+            onChange={e => setLanguage(e.target.value)}
+            style={{
+              background: uiTheme.surfaceBg,
+              border: `1px solid ${uiTheme.borderStrong}`,
+              color: uiTheme.textPrimary,
+              borderRadius: 4,
+              padding: '4px 8px',
+              fontSize: 12,
+            }}>
+            {LANGUAGES.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+
+        <span style={{ color: uiTheme.textSecondary, fontSize: 13, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+          <span style={{ color: uiTheme.textPrimary }}>f(n) = n/</span>
           <span style={{ color: PARAM_COLORS.d }}>{d}</span>
-          <span style={{ color: 'white' }}> (even)   |   </span>
+          <span style={{ color: uiTheme.textPrimary }}> (even)   |   </span>
           <span style={{ color: PARAM_COLORS.m }}>{m}</span>
-          <span style={{ color: 'white' }}>n {sign} </span>
+          <span style={{ color: uiTheme.textPrimary }}>n {sign} </span>
           <span style={{ color: PARAM_COLORS.a }}>{Math.abs(a)}</span>
-          <span style={{ color: 'white' }}> (odd)</span>
+          <span style={{ color: uiTheme.textPrimary }}> (odd)</span>
         </span>
 
         {/* Parameter sliders */}
@@ -811,7 +1307,7 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             type="text" inputMode="numeric" value={inputVal}
-            placeholder="Single start value"
+            placeholder={t('singleStartValue')}
             onChange={handleInputChange}
             onKeyDown={e => e.key === 'Enter' && addNumber()}
             style={{
@@ -822,15 +1318,15 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
           <button onClick={addNumber} style={{
             background: '#1e44aa', border: 'none', color: 'white',
             padding: '4px 11px', borderRadius: 4, fontSize: 12,
-          }}>Add</button>
+          }}>{t('add')}</button>
           <button onClick={reset} style={{
             background: '#3d1020', border: 'none', color: '#ffaaaa',
             padding: '4px 12px', borderRadius: 4, fontSize: 12,
-          }}>Reset</button>
+          }}>{t('reset')}</button>
           <button onClick={() => setShowDataTable(!showDataTable)} style={{
             background: showDataTable ? '#2a4455' : '#1a2d50', border: '1px solid #3355aa',
             color: 'white', padding: '4px 11px', borderRadius: 4, fontSize: 12,
-          }}>📊 Cases</button>
+          }}>{`📊 ${t('cases')}`}</button>
             <button
               type="button"
               disabled={!log[0] || isCaseSaved(log[0])}
@@ -846,12 +1342,12 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
                 cursor: !log[0] || isCaseSaved(log[0]) ? 'default' : 'pointer',
                 boxShadow: !log[0] || isCaseSaved(log[0]) ? 'none' : '0 4px 10px rgba(73, 169, 95, 0.35)',
               }}>
-              {!log[0] ? 'Save Latest Case' : isCaseSaved(log[0]) ? 'Latest Case Saved' : 'Save Latest Case'}
+              {!log[0] ? t('saveLatestCaseDisabled') : isCaseSaved(log[0]) ? t('latestCaseSaved') : t('saveLatestCase')}
             </button>
             <button
               type="button"
-              title="Save the most recent result here, or open Cases and save any row from Recent Results."
-              aria-label="How case saving works"
+              title={t('saveCaseHelp')}
+              aria-label={t('saveCaseHelp')}
               style={{
                 width: 22,
                 height: 22,
@@ -887,20 +1383,30 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
           alignItems: 'center', justifyContent: 'center',
         }}>
           <div style={{ fontSize: 'clamp(36px,7vw,88px)', fontWeight: 'bold', color: 'white', letterSpacing: 4, textAlign: 'center', lineHeight: 1.1 }}>
-            VALUE LIMIT<br/>REACHED
+            {valueLimitLines[0]}{valueLimitLines[1] ? <><br />{valueLimitLines[1]}</> : null}
           </div>
           <div style={{ color: '#ff8866', fontSize: 16, marginTop: 20, textAlign: 'center' }}>
-            Starting value <strong>{formatValue(overflow.start)}</strong> exceeded {formatValue(MAX_VAL)} after {overflow.steps} steps
+            {t('startingValueExceeded', {
+              start: formatValue(overflow.start),
+              max: formatValue(MAX_VAL),
+              steps: overflow.steps,
+            }).split(String(formatValue(overflow.start))).reduce((acc, part, idx, arr) => {
+              if (idx === arr.length - 1) return [...acc, part];
+              return [...acc, part, <strong key={idx}>{formatValue(overflow.start)}</strong>];
+            }, [])}
           </div>
           <div style={{ color: '#aabbd0', fontSize: 13, marginTop: 10, textAlign: 'center', maxWidth: 560 }}>
-            This is not an input error. The sequence kept growing, so the app stopped once it crossed the current exploration ceiling. Peak value reached: <strong>{formatValue(overflow.maxValue)}</strong>.
+            {t('valueLimitExplanation', { maxValue: formatValue(overflow.maxValue) }).split(String(formatValue(overflow.maxValue))).reduce((acc, part, idx, arr) => {
+              if (idx === arr.length - 1) return [...acc, part];
+              return [...acc, part, <strong key={idx}>{formatValue(overflow.maxValue)}</strong>];
+            }, [])}
           </div>
           <button onClick={() => setOverflow(null)} style={{
             marginTop: 36, background: 'transparent',
             border: '1px solid #445566', color: '#aabbcc',
             padding: '8px 28px', borderRadius: 4, fontSize: 14, letterSpacing: 2,
           }}>
-            CONTINUE
+            {t('continue')}
           </button>
         </div>
       )}
@@ -910,52 +1416,140 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
 
         {/* Main canvas */}
         <canvas ref={canvasRef}
-          style={{ flex: 1, display: 'block', minWidth: 0 }} />
+          onPointerDown={handleCanvasPointerDown}
+          onPointerMove={handleCanvasPointerMove}
+          onPointerUp={handleCanvasPointerUp}
+          onPointerCancel={handleCanvasPointerCancel}
+          style={{ flex: 1, display: 'block', minWidth: 0, cursor: isDraggingNode ? 'grabbing' : 'grab' }} />
+
+        <div style={{
+          position: 'absolute',
+          top: 12,
+          left: 12,
+          zIndex: 5,
+          display: 'flex',
+          gap: 10,
+          alignItems: 'center',
+          flexWrap: 'wrap',
+        }}>
+          <button
+            type="button"
+            onClick={resetLayout}
+            style={{
+              background: uiTheme.overlayBg,
+              border: `1px solid ${uiTheme.borderStrong}`,
+              color: uiTheme.textPrimary,
+              padding: '6px 12px',
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 'bold',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            }}>
+            {t('resetLayout')}
+          </button>
+          <button
+            type="button"
+            title={t('dragHelp')}
+            aria-label={t('dragHelp')}
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: '50%',
+              border: `1px solid ${uiTheme.borderStrong}`,
+              background: uiTheme.overlayBgSoft,
+              color: uiTheme.textSecondary,
+              fontSize: 12,
+              fontWeight: 'bold',
+              padding: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'help',
+            }}>
+            ?
+          </button>
+          <label style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            background: uiTheme.overlayBgSoft,
+            border: `1px solid ${uiTheme.border}`,
+            color: uiTheme.textPrimary,
+            borderRadius: 6,
+            padding: '5px 9px',
+            fontSize: 11,
+          }}>
+            <input
+              type="checkbox"
+              checked={showGrid}
+              onChange={e => setShowGrid(e.target.checked)}
+            />
+            {t('grid')}
+          </label>
+          <label style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            background: uiTheme.overlayBgSoft,
+            border: `1px solid ${uiTheme.border}`,
+            color: uiTheme.textPrimary,
+            borderRadius: 6,
+            padding: '5px 9px',
+            fontSize: 11,
+          }}>
+            <input
+              type="checkbox"
+              checked={useLightTheme}
+              onChange={e => setUseLightTheme(e.target.checked)}
+            />
+            {t('lightTheme')}
+          </label>
+        </div>
 
         {/* Data Table Overlay */}
         {showDataTable && (
           <div style={{
             position: 'absolute', top: 60, left: 20, right: 320,
             maxHeight: 'calc(100% - 80px)', overflowY: 'auto',
-            background: 'rgba(10, 20, 40, 0.96)', border: '2px solid #4477aa',
+            background: uiTheme.overlayBg, border: `2px solid ${uiTheme.borderStrong}`,
             borderRadius: 8, padding: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.7)',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <span style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 14 }}>Cases</span>
+              <span style={{ color: uiTheme.titleText, fontWeight: 'bold', fontSize: 14 }}>{t('cases')}</span>
               <button onClick={() => setShowDataTable(false)} style={{
-                background: 'transparent', border: '1px solid #4477aa',
-                color: '#aabbcc', borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer'
-              }}>Close</button>
+                background: 'transparent', border: `1px solid ${uiTheme.borderStrong}`,
+                color: uiTheme.textMuted, borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer'
+              }}>{t('close')}</button>
             </div>
-            <div style={{ color: '#7f93b0', fontSize: 11, lineHeight: 1.45, marginBottom: 10 }}>
-              Recent Results fill automatically every time you add a start value. Saved Cases are the examples students choose to keep for pattern-hunting.
+            <div style={{ color: uiTheme.textMuted, fontSize: 11, lineHeight: 1.45, marginBottom: 10 }}>
+              {t('casesExplanation')}
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <div style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 12, marginBottom: 6 }}>Recent Results</div>
-              <table style={{ width: '100%', fontSize: 12, color: '#ddeeff', borderCollapse: 'collapse' }}>
+              <div style={{ color: uiTheme.titleText, fontWeight: 'bold', fontSize: 12, marginBottom: 6 }}>{t('recentResults')}</div>
+              <table style={{ width: '100%', fontSize: 12, color: uiTheme.textPrimary, borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid #3355aa' }}>
-                    <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Start</th>
-                    <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Outcome</th>
-                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Steps</th>
-                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Peak</th>
-                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Keep</th>
+                  <tr style={{ borderBottom: `1px solid ${uiTheme.borderStrong}` }}>
+                    <th style={{ padding: '6px', textAlign: 'left', color: uiTheme.titleText }}>{t('start')}</th>
+                    <th style={{ padding: '6px', textAlign: 'left', color: uiTheme.titleText }}>{t('outcome')}</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: uiTheme.titleText }}>{t('steps')}</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: uiTheme.titleText }}>{t('peak')}</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: uiTheme.titleText }}>{t('keep')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {log.length === 0 ? (
                     <tr>
-                      <td colSpan="5" style={{ padding: '8px 6px', color: '#667788' }}>No results yet. Add a starting value to create a case.</td>
+                      <td colSpan="5" style={{ padding: '8px 6px', color: uiTheme.textMuted }}>{t('noResultsYet')}</td>
                     </tr>
                   ) : log.map((entry, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid #223344' }}>
+                    <tr key={i} style={{ borderBottom: `1px solid ${uiTheme.border}` }}>
                       <td style={{ padding: '6px', fontWeight: 'bold' }}>{formatValue(entry.start)}</td>
                       <td style={{ padding: '6px', color: OUTCOME_COLOR[entry.outcome] }}>
-                        {OUTCOME_LABEL[entry.outcome]}
+                        {t(`outcomes.${entry.outcome}`)}
                       </td>
-                      <td style={{ padding: '6px', textAlign: 'right', color: '#99aacc' }}>{entry.steps}</td>
-                      <td style={{ padding: '6px', textAlign: 'right', color: '#99aacc' }}>{formatValue(entry.maxValue)}</td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: uiTheme.textSecondary }}>{entry.steps}</td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: uiTheme.textSecondary }}>{formatValue(entry.maxValue)}</td>
                       <td style={{ padding: '6px', textAlign: 'right' }}>
                         <button
                           type="button"
@@ -970,7 +1564,7 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
                             fontSize: 10,
                             cursor: isCaseSaved(entry) ? 'default' : 'pointer',
                           }}>
-                          {isCaseSaved(entry) ? 'Saved' : 'Save'}
+                          {isCaseSaved(entry) ? t('saved') : t('save')}
                         </button>
                       </td>
                     </tr>
@@ -981,63 +1575,63 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
 
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <div style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 12 }}>Saved Cases</div>
+                <div style={{ color: uiTheme.titleText, fontWeight: 'bold', fontSize: 12 }}>{t('savedCases')}</div>
                 {savedCases.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setSavedCases([])}
                     style={{
                       background: 'transparent',
-                      border: '1px solid #445566',
-                      color: '#aabbcc',
+                      border: `1px solid ${uiTheme.border}`,
+                      color: uiTheme.textMuted,
                       borderRadius: 4,
                       padding: '2px 8px',
                       fontSize: 10,
                     }}>
-                    Clear Saved
+                    {t('clearSaved')}
                   </button>
                 )}
               </div>
-              <table style={{ width: '100%', fontSize: 12, color: '#ddeeff', borderCollapse: 'collapse' }}>
+              <table style={{ width: '100%', fontSize: 12, color: uiTheme.textPrimary, borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid #3355aa' }}>
+                  <tr style={{ borderBottom: `1px solid ${uiTheme.borderStrong}` }}>
                     <th style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.m }}>m</th>
                     <th style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.a }}>b</th>
                     <th style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.d }}>d</th>
-                    <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Start</th>
-                    <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Outcome</th>
-                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Steps</th>
-                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Peak</th>
-                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Remove</th>
+                    <th style={{ padding: '6px', textAlign: 'left', color: uiTheme.titleText }}>{t('start')}</th>
+                    <th style={{ padding: '6px', textAlign: 'left', color: uiTheme.titleText }}>{t('outcome')}</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: uiTheme.titleText }}>{t('steps')}</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: uiTheme.titleText }}>{t('peak')}</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: uiTheme.titleText }}>{t('remove')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {savedCases.length === 0 ? (
                     <tr>
-                      <td colSpan="8" style={{ padding: '8px 6px', color: '#667788' }}>No saved cases yet. Save a few interesting examples from Recent Results to compare patterns.</td>
+                      <td colSpan="8" style={{ padding: '8px 6px', color: uiTheme.textMuted }}>{t('noSavedCasesYet')}</td>
                     </tr>
                   ) : savedCases.map(entry => (
-                    <tr key={entry.key} style={{ borderBottom: '1px solid #223344' }}>
+                    <tr key={entry.key} style={{ borderBottom: `1px solid ${uiTheme.border}` }}>
                       <td style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.m }}>{entry.m}</td>
                       <td style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.a }}>{entry.a}</td>
                       <td style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.d }}>{entry.d}</td>
                       <td style={{ padding: '6px', fontWeight: 'bold' }}>{formatValue(entry.start)}</td>
-                      <td style={{ padding: '6px', color: OUTCOME_COLOR[entry.outcome] }}>{OUTCOME_LABEL[entry.outcome]}</td>
-                      <td style={{ padding: '6px', textAlign: 'right', color: '#99aacc' }}>{entry.steps}</td>
-                      <td style={{ padding: '6px', textAlign: 'right', color: '#99aacc' }}>{formatValue(entry.maxValue)}</td>
+                      <td style={{ padding: '6px', color: OUTCOME_COLOR[entry.outcome] }}>{t(`outcomes.${entry.outcome}`)}</td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: uiTheme.textSecondary }}>{entry.steps}</td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: uiTheme.textSecondary }}>{formatValue(entry.maxValue)}</td>
                       <td style={{ padding: '6px', textAlign: 'right' }}>
                         <button
                           type="button"
                           onClick={() => removeSavedCase(entry.key)}
                           style={{
                             background: 'transparent',
-                            border: '1px solid #445566',
-                            color: '#aabbcc',
+                            border: `1px solid ${uiTheme.border}`,
+                            color: uiTheme.textMuted,
                             borderRadius: 4,
                             padding: '3px 8px',
                             fontSize: 10,
                           }}>
-                          Remove
+                          {t('remove')}
                         </button>
                       </td>
                     </tr>
@@ -1050,31 +1644,31 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
 
         {/* ── ZhengGPT Chat Panel ── */}
         <div style={{
-          width: 300, background: '#0a1020', borderLeft: '1px solid #1e2f55',
+          width: 300, background: uiTheme.panelBg, borderLeft: `1px solid ${uiTheme.border}`,
           display: 'flex', flexDirection: 'column', flexShrink: 0, order: 2,
         }}>
-          <div style={{ padding: '8px 12px', borderBottom: '1px solid #1e2f55',
-            color: '#7aaaf0', fontWeight: 'bold', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>ZhengGPT {!apiKey && <span style={{ color: '#ff7755', fontSize: 11 }}>— no key</span>}</span>
+          <div style={{ padding: '8px 12px', borderBottom: `1px solid ${uiTheme.border}`,
+            color: uiTheme.titleText, fontWeight: 'bold', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>ZhengGPT {!apiKey && <span style={{ color: '#ff7755', fontSize: 11 }}> - {t('noKey')}</span>}</span>
             {apiKey && (
               <button onClick={clearApiKey} style={{
                 background: 'transparent', border: '1px solid #3a4a66',
                 color: '#7799bb', fontSize: 10, padding: '2px 6px', borderRadius: 3, cursor: 'pointer'
-              }}>Change Key</button>
+              }}>{t('changeKey')}</button>
             )}
           </div>
 
           {/* API Key Input (shown when no key is set) */}
           {showKeyInput && (
-            <div style={{ padding: '10px', background: '#0f1a2a', borderBottom: '1px solid #1e2f55' }}>
-              <div style={{ color: '#99bbdd', fontSize: 11, marginBottom: 6 }}>Enter your OpenRouter API key:</div>
+            <div style={{ padding: '10px', background: uiTheme.panelBgAlt, borderBottom: `1px solid ${uiTheme.border}` }}>
+              <div style={{ color: uiTheme.textSecondary, fontSize: 11, marginBottom: 6 }}>{t('enterApiKey')}</div>
               <input
                 type="password"
                 placeholder="sk-or-v1-..."
                 onKeyDown={e => e.key === 'Enter' && saveApiKey(e.target.value)}
                 style={{
-                  width: '100%', background: '#162040', border: '1px solid #2a3f66',
-                  color: 'white', borderRadius: 4, padding: '5px 8px', fontSize: 11,
+                  width: '100%', background: uiTheme.surfaceBg, border: `1px solid ${uiTheme.border}`,
+                  color: uiTheme.textPrimary, borderRadius: 4, padding: '5px 8px', fontSize: 11,
                   fontFamily: 'monospace'
                 }}
               />
@@ -1084,9 +1678,9 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
               }} style={{
                 marginTop: 6, background: '#1e44aa', border: 'none',
                 color: 'white', borderRadius: 4, padding: '4px 10px', fontSize: 11, cursor: 'pointer', width: '100%'
-              }}>Save Key</button>
-              <div style={{ color: '#667788', fontSize: 10, marginTop: 6, lineHeight: 1.3 }}>
-                Get a free key at <a href="https://openrouter.ai" target="_blank" style={{ color: '#5588dd' }}>openrouter.ai</a>
+              }}>{t('saveKey')}</button>
+              <div style={{ color: uiTheme.textMuted, fontSize: 10, marginTop: 6, lineHeight: 1.3 }}>
+                {t('getFreeKeyAt')} <a href="https://openrouter.ai" target="_blank" style={{ color: '#5588dd' }}>openrouter.ai</a>
               </div>
             </div>
           )}
@@ -1100,8 +1694,8 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
               }}>
                 <span style={{
                   display: 'inline-block', maxWidth: '85%',
-                  background: msg.role === 'user' ? '#1e44aa' : '#162040',
-                  color: msg.role === 'user' ? '#ddeeff' : '#aac4ee',
+                  background: msg.role === 'user' ? '#1e44aa' : uiTheme.surfaceBg,
+                  color: msg.role === 'user' ? '#ddeeff' : uiTheme.textSecondary,
                   borderRadius: msg.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
                   padding: '6px 10px',
                 }}>
@@ -1110,14 +1704,14 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
               </div>
             ))}
             {chatLoading && (
-              <div style={{ color: '#446688', fontStyle: 'italic', fontSize: 11 }}>ZhengGPT is thinking…</div>
+              <div style={{ color: uiTheme.textMuted, fontStyle: 'italic', fontSize: 11 }}>{t('zhengThinking')}</div>
             )}
             <div ref={chatEndRef} />
           </div>
 
           {/* Download Button - Prominent */}
           {chatMessages.length > 1 && (
-            <div style={{ padding: '10px', borderTop: '1px solid #1e2f55', background: '#0a1525' }}>
+            <div style={{ padding: '10px', borderTop: `1px solid ${uiTheme.border}`, background: uiTheme.panelBgAlt }}>
               <button onClick={downloadChatTranscript} style={{
                 width: '100%',
                 background: 'linear-gradient(135deg, #ff6b35 0%, #f7931e 100%)',
@@ -1144,59 +1738,59 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
                 e.target.style.boxShadow = '0 4px 12px rgba(255, 107, 53, 0.4)';
               }}>
                 <span style={{ fontSize: 20 }}>💾</span>
-                <span>Download Chat</span>
+                <span>{t('downloadChat')}</span>
               </button>
             </div>
           )}
 
           {/* Input */}
-          <div style={{ padding: '8px', borderTop: chatMessages.length > 1 ? 'none' : '1px solid #1e2f55', display: 'flex', gap: 6 }}>
+          <div style={{ padding: '8px', borderTop: chatMessages.length > 1 ? 'none' : `1px solid ${uiTheme.border}`, display: 'flex', gap: 6 }}>
             <input
               value={chatInput}
               onChange={e => setChatInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && sendChat()}
-              placeholder="Ask ZhengGPT…"
+              placeholder={t('askZheng')}
               style={{
-                flex: 1, background: '#162040', border: '1px solid #2a3f66',
-                color: 'white', borderRadius: 4, padding: '5px 8px', fontSize: 12,
+                flex: 1, background: uiTheme.surfaceBg, border: `1px solid ${uiTheme.border}`,
+                color: uiTheme.textPrimary, borderRadius: 4, padding: '5px 8px', fontSize: 12,
               }}
             />
             <button onClick={sendChat} disabled={chatLoading} style={{
               background: chatLoading ? '#112' : '#1e44aa', border: 'none',
               color: 'white', borderRadius: 4, padding: '5px 10px', fontSize: 12, cursor: 'pointer',
-            }}>Send</button>
+            }}>{t('send')}</button>
           </div>
         </div>
 
         {/* ── Scoreboard ── */}
         <div style={{
-          width: 290, background: '#0a1020', borderLeft: '1px solid #1e2f55',
+          width: 290, background: uiTheme.panelBg, borderLeft: `1px solid ${uiTheme.border}`,
           display: 'flex', flexDirection: 'column', flexShrink: 0, order: 1,
           overflowY: 'auto', padding: '8px 10px',
         }}>
           <div style={{
-            color: '#7aaaf0', fontWeight: 'bold', fontSize: 12,
+            color: uiTheme.titleText, fontWeight: 'bold', fontSize: 12,
             textAlign: 'center', letterSpacing: 2, marginBottom: 8,
-          }}>DATA REFERENCE GRIDS</div>
+          }}>{t('dataReferenceGrids')}</div>
 
           <div style={{
             marginBottom: 12,
             padding: '8px',
-            background: '#0f1a2a',
-            border: '1px solid #1e2f55',
+            background: uiTheme.panelBgAlt,
+            border: `1px solid ${uiTheme.border}`,
             borderRadius: 6,
           }}>
-            <div style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 11, marginBottom: 8, letterSpacing: 1 }}>
-              GRID WINDOW
+            <div style={{ color: uiTheme.titleText, fontWeight: 'bold', fontSize: 11, marginBottom: 8, letterSpacing: 1 }}>
+              {t('gridWindow')}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 76px', gap: 6, marginBottom: 6 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span style={{ color: '#99bbdd', fontSize: 10 }}>Start at</span>
+                <span style={{ color: uiTheme.textSecondary, fontSize: 10 }}>{t('startAt')}</span>
                 <div style={{
                   width: '100%',
-                  background: '#101a31',
-                  border: '1px solid #243858',
-                  color: '#ddeeff',
+                  background: uiTheme.surfaceBgMuted,
+                  border: `1px solid ${uiTheme.border}`,
+                  color: uiTheme.textPrimary,
                   borderRadius: 4,
                   padding: '6px 8px',
                   fontSize: 11,
@@ -1209,12 +1803,12 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span style={{ color: '#99bbdd', fontSize: 10 }}>Blocks</span>
+                <span style={{ color: uiTheme.textSecondary, fontSize: 10 }}>{t('blocks')}</span>
                 <div style={{
                   width: '100%',
-                  background: '#101a31',
-                  border: '1px solid #243858',
-                  color: '#ddeeff',
+                  background: uiTheme.surfaceBgMuted,
+                  border: `1px solid ${uiTheme.border}`,
+                  color: uiTheme.textPrimary,
                   borderRadius: 4,
                   padding: '6px 8px',
                   fontSize: 11,
@@ -1227,8 +1821,8 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
                 </div>
               </div>
             </div>
-            <div style={{ color: '#667f9f', fontSize: 10, marginBottom: 6 }}>
-              Use Previous/Next to move the visible window.
+            <div style={{ color: uiTheme.textMuted, fontSize: 10, marginBottom: 6 }}>
+              {t('usePreviousNext')}
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button
@@ -1236,28 +1830,28 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
                 onClick={() => updateGridStart(Math.max(1, gridStart - gridCount * GRID_BLOCK_SIZE))}
                 style={{
                   flex: 1,
-                  background: '#162040',
-                  border: '1px solid #29406a',
-                  color: '#ddeeff',
+                  background: uiTheme.surfaceBg,
+                  border: `1px solid ${uiTheme.border}`,
+                  color: uiTheme.textPrimary,
                   borderRadius: 4,
                   padding: '5px 6px',
                   fontSize: 10,
                 }}>
-                Previous {gridCount * GRID_BLOCK_SIZE}
+                {t('previous')} {gridCount * GRID_BLOCK_SIZE}
               </button>
               <button
                 type="button"
                 onClick={() => updateGridStart(gridStart + gridCount * GRID_BLOCK_SIZE)}
                 style={{
                   flex: 1,
-                  background: '#162040',
-                  border: '1px solid #29406a',
-                  color: '#ddeeff',
+                  background: uiTheme.surfaceBg,
+                  border: `1px solid ${uiTheme.border}`,
+                  color: uiTheme.textPrimary,
                   borderRadius: 4,
                   padding: '5px 6px',
                   fontSize: 10,
                 }}>
-                Next {gridCount * GRID_BLOCK_SIZE}
+                {t('next')} {gridCount * GRID_BLOCK_SIZE}
               </button>
             </div>
           </div>
@@ -1265,16 +1859,16 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
           <div style={{
             marginBottom: 12,
             padding: '8px',
-            background: '#0f1a2a',
-            border: '1px solid #1e2f55',
+            background: uiTheme.panelBgAlt,
+            border: `1px solid ${uiTheme.border}`,
             borderRadius: 6,
           }}>
-            <div style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 11, marginBottom: 6, letterSpacing: 1 }}>
-              RECENT STARTS
+            <div style={{ color: uiTheme.titleText, fontWeight: 'bold', fontSize: 11, marginBottom: 6, letterSpacing: 1 }}>
+              {t('recentStarts')}
             </div>
             {log.length === 0 ? (
-              <div style={{ color: '#667788', fontSize: 11, lineHeight: 1.4 }}>
-                Large starting values will appear here and in the table.
+              <div style={{ color: uiTheme.textMuted, fontSize: 11, lineHeight: 1.4 }}>
+                {t('largeValuesAppear')}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -1292,16 +1886,16 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
                       gap: 6,
                       alignItems: 'center',
                       width: '100%',
-                      background: '#162040',
-                      border: '1px solid #29406a',
-                      color: '#ddeeff',
+                      background: uiTheme.surfaceBg,
+                      border: `1px solid ${uiTheme.border}`,
+                      color: uiTheme.textPrimary,
                       borderRadius: 4,
                       padding: '5px 7px',
                       fontSize: 11,
                       textAlign: 'left',
                     }}>
                     <span>{formatValue(entry.start)}</span>
-                    <span style={{ color: OUTCOME_COLOR[entry.outcome], fontSize: 10 }}>{OUTCOME_LABEL[entry.outcome]}</span>
+                    <span style={{ color: OUTCOME_COLOR[entry.outcome], fontSize: 10 }}>{t(`outcomes.${entry.outcome}`)}</span>
                   </button>
                 ))}
               </div>
@@ -1333,7 +1927,7 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
                       WebkitUserSelect: 'none',
                       color: hit ? 'rgba(0,0,0,0.65)' : '#2a4060',
                     }}
-                    title={`Add ${n}`}
+                    title={t('addValueTitle', { value: n })}
                     onMouseDown={e => {
                       e.preventDefault();
                       setInputVal(String(n));
@@ -1356,7 +1950,7 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
             lineHeight: 1.18,
             fontFamily: 'Trebuchet MS, Segoe UI, sans-serif',
           }}>
-            Use the grid window controls to jump anywhere. Larger values stay visible in Recent Starts and the table.
+            {t('useGridControls')}
           </div>
 
           <div style={{
@@ -1368,20 +1962,20 @@ REMEMBER: You're a thinking partner, not an oracle. Your job is to help them thi
             lineHeight: 1.4,
           }}>
             <div>
-              Color scale: 
-              <span style={{ color: '#4ecb6f', fontWeight: 'bold' }}> green</span>
+              {t('colorScale')}
+              <span style={{ color: '#4ecb6f', fontWeight: 'bold' }}> {t('green')}</span>
               {' '}→ 
-              <span style={{ color: '#c4d83f', fontWeight: 'bold' }}> yellow</span>
+              <span style={{ color: '#c4d83f', fontWeight: 'bold' }}> {t('yellow')}</span>
               {' '}→ 
-              <span style={{ color: '#f0a23a', fontWeight: 'bold' }}> orange</span>
+              <span style={{ color: '#f0a23a', fontWeight: 'bold' }}> {t('orange')}</span>
               {' '}→ 
-              <span style={{ color: '#e45a4f', fontWeight: 'bold' }}> red</span>
+              <span style={{ color: '#e45a4f', fontWeight: 'bold' }}> {t('red')}</span>
             </div>
             <div style={{ marginTop: 4 }}>
-              Green shows smaller values; red shows larger values.
+              {t('greenShows')}
             </div>
             <div style={{ marginTop: 2 }}>
-              Glowing nodes mark detected cycle values.
+              {t('glowingNodes')}
             </div>
           </div>
         </div>
