@@ -9,7 +9,7 @@
   <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
-      var BUILD = '3441dd0-r3';
+      var BUILD = '3441dd0-r4';
       var params = new URLSearchParams(window.location.search);
       if (params.get('fr') !== BUILD || !params.has('cb')) {
         params.set('fr', BUILD);
@@ -1966,7 +1966,9 @@ function App() {
                 justifyContent: 'center',
                 boxShadow: '0 6px 24px rgba(0,0,0,0.4)',
                 position: 'relative',
-              }}>
+              }}
+              title={t('stepsHelp') || 'Maximum steps to show for each sequence. Increase to see cycles repeat many times.'}
+              >
                 <input
                   type="text"
                   inputMode="numeric"
@@ -1977,6 +1979,7 @@ function App() {
                       setMaxVisibleSteps(val);
                     }
                   }}
+                  title={t('stepsHelp') || 'Maximum steps to show for each sequence. Increase to see cycles repeat many times.'}
                   style={{
                     width: '100%',
                     height: '100%',
@@ -1991,20 +1994,6 @@ function App() {
                     cursor: 'pointer',
                   }}
                 />
-                <div style={{
-                  position: 'absolute',
-                  bottom: -28,
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  whiteSpace: 'nowrap',
-                  color: uiTheme.textSecondary,
-                  fontSize: 12,
-                  fontWeight: 'bold',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                }}>
-                  {t('visibleSteps')}
-                </div>
               </div>
               <button
                 onMouseDown={() => setArrowDownActive(true)}
