@@ -74,6 +74,54 @@ const RESPONSE_LANGUAGE_NAMES = {
   es: 'Spanish',
   'zh-Hans': 'Simplified Chinese',
 };
+const CHAT_KEY_STORAGE = 'zhenggpt_key';
+
+function detectChatProvider(apiKey) {
+  return apiKey.trim().startsWith('sk-or-v1-') ? 'openrouter' : 'deepseek';
+}
+
+function getChatRequestConfig(apiKey, messages, language) {
+  const provider = detectChatProvider(apiKey);
+  const systemMessage = { role: 'system', content: buildSystemPrompt(language) };
+
+  if (provider === 'openrouter') {
+    return {
+      endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': window.location.href,
+        'X-Title': 'Orbit Explorer',
+      },
+      body: {
+        model: 'deepseek/deepseek-chat',
+        messages: [systemMessage, ...messages],
+        max_tokens: 200,
+      },
+    };
+  }
+
+  return {
+    endpoint: 'https://api.deepseek.com/chat/completions',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: {
+      model: 'deepseek-chat',
+      messages: [systemMessage, ...messages],
+      max_tokens: 200,
+    },
+  };
+}
+
+function getChatErrorMessage(error, language) {
+  if (error?.message) return error.message;
+  if (language === 'es') return 'Error de red. Revisa tu conexion.';
+  if (language === 'zh-Hans') return '网络错误。请检查你的连接。';
+  return 'Network error. Check your connection.';
+}
+
 const TRANSLATIONS = {
   en: {
     appName: 'Orbit Explorer',
@@ -109,11 +157,12 @@ const TRANSLATIONS = {
     clearSaved: 'Clear Saved',
     remove: 'Remove',
     noSavedCasesYet: 'No saved cases yet. Save a few interesting examples from Recent Results to compare patterns.',
-    enterApiKey: 'Enter your OpenRouter API key:',
+    enterApiKey: 'Enter your ZhengGPT API key (OpenRouter or DeepSeek):',
     saveKey: 'Save Key',
-    getFreeKeyAt: 'Get a free key at',
+    getApiKeysAt: 'Get keys at',
     noKey: 'no key',
     changeKey: 'Change Key',
+    keyDetected: 'Detected: {provider}',
     zhengThinking: 'ZhengGPT is thinking...',
     downloadChat: 'Download Chat',
     askZheng: 'Ask ZhengGPT...',
@@ -189,11 +238,12 @@ const TRANSLATIONS = {
     clearSaved: 'Borrar guardados',
     remove: 'Quitar',
     noSavedCasesYet: 'Todavia no hay casos guardados. Guarda algunos ejemplos interesantes de Resultados recientes para comparar patrones.',
-    enterApiKey: 'Ingresa tu clave API de OpenRouter:',
+    enterApiKey: 'Ingresa tu clave API de ZhengGPT (OpenRouter o DeepSeek):',
     saveKey: 'Guardar clave',
-    getFreeKeyAt: 'Consigue una clave gratis en',
+    getApiKeysAt: 'Consigue claves en',
     noKey: 'sin clave',
     changeKey: 'Cambiar clave',
+    keyDetected: 'Detectado: {provider}',
     zhengThinking: 'ZhengGPT esta pensando...',
     downloadChat: 'Descargar chat',
     askZheng: 'Preguntale a ZhengGPT...',
@@ -269,11 +319,12 @@ const TRANSLATIONS = {
     clearSaved: '清空已保存',
     remove: '删除',
     noSavedCasesYet: '还没有保存的案例。请从“最近结果”中保存几个有趣的例子来比较模式。',
-    enterApiKey: '输入你的 OpenRouter API 密钥：',
+    enterApiKey: '输入你的 ZhengGPT API 密钥（OpenRouter 或 DeepSeek）：',
     saveKey: '保存密钥',
-    getFreeKeyAt: '可在此免费获取密钥：',
+    getApiKeysAt: '可在此获取密钥：',
     noKey: '无密钥',
     changeKey: '更改密钥',
+    keyDetected: '已识别：{provider}',
     zhengThinking: 'ZhengGPT 正在思考……',
     downloadChat: '下载聊天记录',
     askZheng: '向 ZhengGPT 提问……',
@@ -777,10 +828,12 @@ function App() {
   const [a, setA]           = useState(parseInt(urlA ?? '-1'));
   const [d, setD]           = useState(parseInt(urlD ?? '2'));
   const [apiKey, setApiKey] = useState(() => {
-    // Try URL first, then localStorage, then empty
-    return urlKey || localStorage.getItem('openrouter_key') || '';
+    // Try URL first, then the new generic key storage, then the legacy OpenRouter storage.
+    return urlKey || localStorage.getItem(CHAT_KEY_STORAGE) || localStorage.getItem('openrouter_key') || '';
   });
-  const [showKeyInput, setShowKeyInput] = useState(!urlKey && !localStorage.getItem('openrouter_key'));
+  const [showKeyInput, setShowKeyInput] = useState(
+    !urlKey && !localStorage.getItem(CHAT_KEY_STORAGE) && !localStorage.getItem('openrouter_key')
+  );
   const [inputVal, setInputVal] = useState('');
   const [ghToken, setGhToken] = useState(() => localStorage.getItem('gh_token') || '');
   const [showGhInput, setShowGhInput] = useState(false);
@@ -844,13 +897,19 @@ function App() {
     const trimmed = key.trim();
     setApiKey(trimmed);
     if (trimmed) {
-      localStorage.setItem('openrouter_key', trimmed);
+      localStorage.setItem(CHAT_KEY_STORAGE, trimmed);
+      if (detectChatProvider(trimmed) === 'openrouter') {
+        localStorage.setItem('openrouter_key', trimmed);
+      } else {
+        localStorage.removeItem('openrouter_key');
+      }
       setShowKeyInput(false);
     }
   }
 
   function clearApiKey() {
     setApiKey('');
+    localStorage.removeItem(CHAT_KEY_STORAGE);
     localStorage.removeItem('openrouter_key');
     setShowKeyInput(true);
   }
@@ -937,25 +996,25 @@ function App() {
     setChatInput('');
     setChatLoading(true);
     try {
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const request = getChatRequestConfig(apiKey, newMessages, language);
+      const res = await fetch(request.endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': window.location.href,
-          'X-Title': 'Orbit Explorer',
-        },
-        body: JSON.stringify({
-          model: 'deepseek/deepseek-chat',
-          messages: [{ role: 'system', content: buildSystemPrompt(language) }, ...newMessages],
-          max_tokens: 200,
-        }),
+        headers: request.headers,
+        body: JSON.stringify(request.body),
       });
-      const data = await res.json();
-      const reply = data.choices?.[0]?.message?.content ?? 'Something went wrong. Try again.';
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+      if (!res.ok) {
+        throw new Error(data?.error?.message || data?.message || `Chat request failed (${res.status})`);
+      }
+      const reply = data?.choices?.[0]?.message?.content ?? 'Something went wrong. Try again.';
       setChatMessages(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch (e) {
-      setChatMessages(prev => [...prev, { role: 'assistant', content: language === 'es' ? 'Error de red. Revisa tu conexion.' : language === 'zh-Hans' ? '网络错误。请检查你的连接。' : 'Network error. Check your connection.' }]);
+      setChatMessages(prev => [...prev, { role: 'assistant', content: getChatErrorMessage(e, language) }]);
     }
     setChatLoading(false);
   }
@@ -1647,6 +1706,7 @@ function App() {
           width: 300, background: uiTheme.panelBg, borderLeft: `1px solid ${uiTheme.border}`,
           display: 'flex', flexDirection: 'column', flexShrink: 0, order: 2,
         }}>
+          {apiKey ? detectChatProvider(apiKey) : null}
           <div style={{ padding: '8px 12px', borderBottom: `1px solid ${uiTheme.border}`,
             color: uiTheme.titleText, fontWeight: 'bold', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>ZhengGPT {!apiKey && <span style={{ color: '#ff7755', fontSize: 11 }}> - {t('noKey')}</span>}</span>
@@ -1664,7 +1724,7 @@ function App() {
               <div style={{ color: uiTheme.textSecondary, fontSize: 11, marginBottom: 6 }}>{t('enterApiKey')}</div>
               <input
                 type="password"
-                placeholder="sk-or-v1-..."
+                placeholder="sk-or-v1-... or sk-..."
                 onKeyDown={e => e.key === 'Enter' && saveApiKey(e.target.value)}
                 style={{
                   width: '100%', background: uiTheme.surfaceBg, border: `1px solid ${uiTheme.border}`,
@@ -1680,8 +1740,14 @@ function App() {
                 color: 'white', borderRadius: 4, padding: '4px 10px', fontSize: 11, cursor: 'pointer', width: '100%'
               }}>{t('saveKey')}</button>
               <div style={{ color: uiTheme.textMuted, fontSize: 10, marginTop: 6, lineHeight: 1.3 }}>
-                {t('getFreeKeyAt')} <a href="https://openrouter.ai" target="_blank" style={{ color: '#5588dd' }}>openrouter.ai</a>
+                {t('getApiKeysAt')} <a href="https://openrouter.ai" target="_blank" rel="noreferrer" style={{ color: '#5588dd' }}>openrouter.ai</a> / <a href="https://platform.deepseek.com" target="_blank" rel="noreferrer" style={{ color: '#5588dd' }}>platform.deepseek.com</a>
               </div>
+            </div>
+          )}
+
+          {apiKey && (
+            <div style={{ padding: '6px 10px', borderBottom: `1px solid ${uiTheme.border}`, background: uiTheme.panelBgAlt, color: uiTheme.textMuted, fontSize: 10 }}>
+              {t('keyDetected', { provider: detectChatProvider(apiKey) === 'openrouter' ? 'OpenRouter' : 'DeepSeek' })}
             </div>
           )}
 
