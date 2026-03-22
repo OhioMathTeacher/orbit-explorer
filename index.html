@@ -803,10 +803,103 @@ function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, h
   drawFormulaLine(ctx, W / 2, H - formulaBottomPad, oddEquation, '(n odd)', annotationColor, annotationGap);
   ctx.restore();
 
+  // Detect bidirectional cycle edges
+  const bidirectional = new Set();
+  for (const { from, to } of edges) {
+    if (cycleNodes.has(from) && cycleNodes.has(to)) {
+      const reverse = edges.find(e => e.from === to && e.to === from);
+      if (reverse) {
+        const key = from < to ? `${from}-${to}` : `${to}-${from}`;
+        bidirectional.add(key);
+      }
+    }
+  }
+
   // Edges with arrowheads
+  const drawnBidirectional = new Set();
   for (const { from, to } of edges) {
     const nf = nodes.get(from), nt = nodes.get(to);
     if (!nf || !nt) continue;
+    
+    // Check if this is a bidirectional cycle edge
+    const isBidirectional = cycleNodes.has(from) && cycleNodes.has(to) && 
+                            bidirectional.has(from < to ? `${from}-${to}` : `${to}-${from}`);
+    
+    if (isBidirectional) {
+      const key = from < to ? `${from}-${to}` : `${to}-${from}`;
+      if (drawnBidirectional.has(key)) continue; // Already drew this pair
+      drawnBidirectional.add(key);
+      
+      // Draw multiple curved arrows back and forth to show infinite cycle
+      const dx = nt.x - nf.x, dy = nt.y - nf.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 1) continue;
+      
+      // Perpendicular offset for curve
+      const perpX = -dy / dist;
+      const perpY = dx / dist;
+      
+      // Draw 3 sets of bidirectional curved arrows
+      for (let i = 0; i < 3; i++) {
+        const curve = 25 + i * 8; // Increasing curve amount
+        const alpha = 1 - i * 0.25; // Fade out outer arrows
+        
+        // Forward arrow (from -> to)
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        const midX1 = (nf.x + nt.x) / 2 + perpX * curve;
+        const midY1 = (nf.y + nt.y) / 2 + perpY * curve;
+        ctx.moveTo(nf.x, nf.y);
+        ctx.quadraticCurveTo(midX1, midY1, nt.x, nt.y);
+        ctx.strokeStyle = '#ffcc33'; // Yellow for cycle
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // Arrowhead at midpoint pointing to target
+        const t = 0.7;
+        const qx = (1-t)*(1-t)*nf.x + 2*(1-t)*t*midX1 + t*t*nt.x;
+        const qy = (1-t)*(1-t)*nf.y + 2*(1-t)*t*midY1 + t*t*nt.y;
+        const tx = 2*(1-t)*(midX1-nf.x) + 2*t*(nt.x-midX1);
+        const ty = 2*(1-t)*(midY1-nf.y) + 2*t*(nt.y-midY1);
+        const angle1 = Math.atan2(ty, tx);
+        ctx.beginPath();
+        ctx.moveTo(qx, qy);
+        ctx.lineTo(qx - 8 * Math.cos(angle1 - 0.4), qy - 8 * Math.sin(angle1 - 0.4));
+        ctx.lineTo(qx - 8 * Math.cos(angle1 + 0.4), qy - 8 * Math.sin(angle1 + 0.4));
+        ctx.closePath();
+        ctx.fillStyle = '#ffcc33';
+        ctx.fill();
+        
+        // Backward arrow (to -> from)
+        ctx.beginPath();
+        const midX2 = (nf.x + nt.x) / 2 - perpX * curve;
+        const midY2 = (nf.y + nt.y) / 2 - perpY * curve;
+        ctx.moveTo(nt.x, nt.y);
+        ctx.quadraticCurveTo(midX2, midY2, nf.x, nf.y);
+        ctx.strokeStyle = '#ffcc33';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // Arrowhead at midpoint pointing back to source
+        const qx2 = (1-t)*(1-t)*nt.x + 2*(1-t)*t*midX2 + t*t*nf.x;
+        const qy2 = (1-t)*(1-t)*nt.y + 2*(1-t)*t*midY2 + t*t*nf.y;
+        const tx2 = 2*(1-t)*(midX2-nt.x) + 2*t*(nf.x-midX2);
+        const ty2 = 2*(1-t)*(midY2-nt.y) + 2*t*(nf.y-midY2);
+        const angle2 = Math.atan2(ty2, tx2);
+        ctx.beginPath();
+        ctx.moveTo(qx2, qy2);
+        ctx.lineTo(qx2 - 8 * Math.cos(angle2 - 0.4), qy2 - 8 * Math.sin(angle2 - 0.4));
+        ctx.lineTo(qx2 - 8 * Math.cos(angle2 + 0.4), qy2 - 8 * Math.sin(angle2 + 0.4));
+        ctx.closePath();
+        ctx.fillStyle = '#ffcc33';
+        ctx.fill();
+        ctx.restore();
+      }
+      continue;
+    }
+    
+    // Regular one-way edge
     const dx = nt.x - nf.x, dy = nt.y - nf.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist < 1) continue;
