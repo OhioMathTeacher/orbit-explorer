@@ -9,7 +9,7 @@
   <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
-      var BUILD = 'march22-2026';
+      var BUILD = 'march22-2026-v2';
       var params = new URLSearchParams(window.location.search);
       if (params.get('fr') !== BUILD || !params.has('cb')) {
         params.set('fr', BUILD);
@@ -2495,7 +2495,7 @@ function App() {
                       padding: 0,
                       userSelect: 'none',
                       WebkitUserSelect: 'none',
-                      color: hit ? 'rgba(0,0,0,0.65)' : '#2a4060',
+                      color: 'white',
                     }}
                     title={t('addValueTitle', { value: n })}
                     onMouseDown={e => {
