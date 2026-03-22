@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>Collatz Variant Explorer</title>
+  <script>
+    (function forceFreshLoad() {
+      var BUILD = '6be422e-r2';
+      var params = new URLSearchParams(window.location.search);
+      if (params.get('fr') !== BUILD || !params.has('cb')) {
+        params.set('fr', BUILD);
+        params.set('cb', String(Date.now()));
+        var next = window.location.pathname + '?' + params.toString() + window.location.hash;
+        window.location.replace(next);
+        return;
+      }
+
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(regs) {
+          regs.forEach(function(reg) { reg.unregister(); });
+        });
+      }
+
+      if ('caches' in window) {
+        caches.keys().then(function(keys) {
+          keys.forEach(function(k) { caches.delete(k); });
+        });
+      }
+    })();
+  </script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #131e3a; color: white; font-family: 'Segoe UI', monospace; overflow: hidden; }
+    button { cursor: pointer; font-family: inherit; }
+    input { font-family: inherit; }
+    input[type=number]::-webkit-outer-spin-button,
+    input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+    input[type=number] { -moz-appearance: textfield; }
+    input[type=range] { accent-color: #5588dd; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ── Constants ────────────────────────────────────────────────────────────────
+const MAX_ITER  = 600;    // max steps before timeout
+const MAX_VAL   = 1e12;   // divergence threshold
+const MAX_START = 1e9;    // largest allowed starting value from the UI
+const MAX_NODES = 120;    // cap displayed nodes
+const NODE_R    = 15;     // base node radius px
+const START_R   = 22;     // radius for starting numbers (persistent anchor)
+const RELIABLE_START_LIMIT = Math.min(MAX_START, Number.MAX_SAFE_INTEGER);
+const PARAM_COLORS = {
+  m: '#63d471',
+  a: '#ffb347',
+  d: '#6bb7ff',
+};
+
+function formatValue(value) {
+  return Number.isFinite(value) ? value.toLocaleString() : String(value);
+}
+
+function measureSegmentWidth(ctx, text) {
+  return ctx.measureText(text).width;
+}
+
+function drawCenteredSegments(ctx, centerX, y, segments) {
+  const totalWidth = segments.reduce((sum, segment) => sum + measureSegmentWidth(ctx, segment.text), 0);
+  let cursorX = centerX - totalWidth / 2;
+  for (const segment of segments) {
+    ctx.fillStyle = segment.color;
+    ctx.fillText(segment.text, cursorX, y);
+    cursorX += measureSegmentWidth(ctx, segment.text);
+  }
+}
+
+function getSegmentsWidth(ctx, segments) {
+  return segments.reduce((sum, segment) => sum + measureSegmentWidth(ctx, segment.text), 0);
+}
+
+function drawFormulaLine(ctx, centerX, y, equationSegments, annotation, annotationColor, gap) {
+  const equationWidth = getSegmentsWidth(ctx, equationSegments);
+  const annotationWidth = measureSegmentWidth(ctx, annotation);
+  const totalWidth = equationWidth + gap + annotationWidth;
+  let cursorX = centerX - totalWidth / 2;
+
+  for (const segment of equationSegments) {
+    ctx.fillStyle = segment.color;
+    ctx.fillText(segment.text, cursorX, y);
+    cursorX += measureSegmentWidth(ctx, segment.text);
+  }
+
+  cursorX += gap;
+  ctx.fillStyle = annotationColor;
+  ctx.fillText(annotation, cursorX, y);
+}
+
+function normalizeIntegerInput(value) {
+  return String(value ?? '').replace(/[,_\s]/g, '');
+}
+
+function parseSingleStartInput(rawValue) {
+  const normalized = normalizeIntegerInput(rawValue);
+  if (!normalized) return { kind: 'empty' };
+  if (!/^\d+$/.test(normalized)) return { kind: 'invalid' };
+
+  const value = Number(normalized);
+  if (!Number.isSafeInteger(value)) return { kind: 'unsafe', value };
+  if (value <= 0) return { kind: 'invalid' };
+  if (value > RELIABLE_START_LIMIT) return { kind: 'above-limit', value };
+
+  return { kind: 'ok', value };
+}
+
+function getStartLimitWarning(rawValue) {
+  const parsed = parseSingleStartInput(rawValue);
+  if (parsed.kind === 'above-limit') {
+    return `Start values above ${formatValue(RELIABLE_START_LIMIT)} are outside the applet's reliable range.`;
+  }
+  if (parsed.kind === 'unsafe') {
+    return 'That value is larger than JavaScript can track reliably as an exact integer.';
+  }
+  return '';
+}
+
+// ── Sequence computation ──────────────────────────────────────────────────────
+function computeSeq(start, m, a, d) {
+  const seq    = [start];
+  const seen   = new Map([[start, 0]]);
+  let n = start;
+  let maxValue = start;
+
+  for (let i = 0; i < MAX_ITER; i++) {
+    let next;
+    if (n % 2 === 0) {
+      next = n / d;
+    } else {
+      next = m * n + a;
+    }
+    maxValue = Math.max(maxValue, next);
+    if (!Number.isInteger(next) || next <= 0)
+      return { seq, outcome: 'noninteger', cycleAt: -1, maxValue };
+    if (next > MAX_VAL) {
+      seq.push(next);
+      return { seq, outcome: 'diverge', cycleAt: -1, maxValue };
+    }
+    seq.push(next);
+    if (seen.has(next)) {
+      const cycleAt = seen.get(next);
+      return { seq, outcome: next === 1 ? 'converge' : 'cycle', cycleAt, maxValue };
+    }
+    seen.set(next, seq.length - 1);
+    n = next;
+  }
+  return { seq, outcome: 'timeout', cycleAt: -1, maxValue };
+}
+
+// ── Color by log(value) ──────────────────────────────────────────────────────
+function valColor(v) {
+  const t = Math.min(1, Math.log10(Math.max(1, Math.abs(v))) / 3.5);
+  const stops = [
+    [0,   [90,  210, 120]],
+    [0.3, [180, 215,  55]],
+    [0.6, [250, 145,  25]],
+    [1.0, [235,  45,  45]],
+  ];
+  for (let i = 1; i < stops.length; i++) {
+    if (t <= stops[i][0]) {
+      const s = (t - stops[i-1][0]) / (stops[i][0] - stops[i-1][0]);
+      const c = stops[i-1][1].map((x, j) => Math.round(x + s * (stops[i][1][j] - x)));
+      return `rgb(${c[0]},${c[1]},${c[2]})`;
+    }
+  }
+  return 'rgb(235,45,45)';
+}
+
+// ── Force-directed physics ───────────────────────────────────────────────────
+function physicsStep(nodes, edges, W, H) {
+  const vals = [...nodes.keys()];
+  const fx = {}, fy = {};
+  for (const v of vals) { fx[v] = 0; fy[v] = 0; }
+
+  // Repulsion between all node pairs
+  for (let i = 0; i < vals.length; i++) {
+    for (let j = i + 1; j < vals.length; j++) {
+      const a = nodes.get(vals[i]), b = nodes.get(vals[j]);
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const d2 = dx * dx + dy * dy + 1;
+      const f  = 5000 / d2;
+      const d  = Math.sqrt(d2);
+      fx[vals[i]] += f * dx / d;  fy[vals[i]] += f * dy / d;
+      fx[vals[j]] -= f * dx / d;  fy[vals[j]] -= f * dy / d;
+    }
+  }
+
+  // Spring attraction along edges
+  const L0 = 85; // natural spring length
+  for (const { from, to } of edges) {
+    if (!nodes.has(from) || !nodes.has(to)) continue;
+    const nf = nodes.get(from), nt = nodes.get(to);
+    const dx = nt.x - nf.x, dy = nt.y - nf.y;
+    const d  = Math.sqrt(dx * dx + dy * dy) + 0.1;
+    const f  = 0.05 * (d - L0);
+    fx[from] += f * dx / d;  fy[from] += f * dy / d;
+    fx[to]   -= f * dx / d;  fy[to]   -= f * dy / d;
+  }
+
+  // Gentle gravity toward center
+  for (const v of vals) {
+    const n = nodes.get(v);
+    fx[v] += 0.018 * (W / 2 - n.x);
+    fy[v] += 0.018 * (H / 2 - n.y);
+  }
+
+  // Euler integration with damping
+  const damp = 0.83;
+  for (const v of vals) {
+    const n  = nodes.get(v);
+    n.vx = (n.vx + fx[v]) * damp;
+    n.vy = (n.vy + fy[v]) * damp;
+    n.x  = Math.max(NODE_R + 2, Math.min(W - NODE_R - 2, n.x + n.vx));
+    n.y  = Math.max(NODE_R + 2, Math.min(H - NODE_R - 2, n.y + n.vy));
+  }
+}
+
+// ── Canvas rendering ─────────────────────────────────────────────────────────
+function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, hoveredNode) {
+  if (!canvas) return;
+  const W = canvas.width, H = canvas.height;
+  const ctx = canvas.getContext('2d');
+
+  // Background
+  ctx.fillStyle = '#131e3a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(40,60,100,0.4)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // Formula watermark — always visible behind the graph
+  const sign = a >= 0 ? '+' : '−';
+  const evenEquation = [
+    { text: 'f(n) = n / ', color: 'white' },
+    { text: String(d), color: PARAM_COLORS.d },
+  ];
+  const oddEquation = [
+    { text: 'f(n) = ', color: 'white' },
+    { text: String(m), color: PARAM_COLORS.m },
+    { text: 'n ', color: 'white' },
+    { text: sign, color: 'white' },
+    { text: ' ', color: 'white' },
+    { text: String(Math.abs(a)), color: PARAM_COLORS.a },
+  ];
+  ctx.save();
+  ctx.globalAlpha = 0.48;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  const maxFormulaWidth = Math.max(260, W - 80);
+  let formulaSize = Math.min(Math.round(W / 28), 46);
+  let annotationGap = 26;
+  while (formulaSize > 24) {
+    ctx.font = `bold ${formulaSize}px monospace`;
+    annotationGap = Math.max(24, Math.round(formulaSize * 0.72));
+    const evenWidth = getSegmentsWidth(ctx, evenEquation) + annotationGap + measureSegmentWidth(ctx, '(n even)');
+    const oddWidth = getSegmentsWidth(ctx, oddEquation) + annotationGap + measureSegmentWidth(ctx, '(n odd)');
+    if (Math.max(evenWidth, oddWidth) <= maxFormulaWidth) break;
+    formulaSize -= 2;
+  }
+  const formulaBottomPad = 12;
+  ctx.font = `bold ${formulaSize}px monospace`;
+  const formulaGap = Math.max(formulaSize + 24, Math.round(formulaSize * 1.9));
+  const annotationColor = 'rgba(255,255,255,0.82)';
+  drawFormulaLine(ctx, W / 2, H - formulaBottomPad - formulaGap, evenEquation, '(n even)', annotationColor, annotationGap);
+  drawFormulaLine(ctx, W / 2, H - formulaBottomPad, oddEquation, '(n odd)', annotationColor, annotationGap);
+  ctx.restore();
+
+  // Edges with arrowheads
+  for (const { from, to } of edges) {
+    const nf = nodes.get(from), nt = nodes.get(to);
+    if (!nf || !nt) continue;
+    const dx = nt.x - nf.x, dy = nt.y - nf.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 1) continue;
+
+    const toR = (startNodes.has(to) ? START_R : NODE_R) + 5;
+    const ex = nt.x - (dx / dist) * toR;
+    const ey = nt.y - (dy / dist) * toR;
+
+    ctx.beginPath();
+    ctx.moveTo(nf.x, nf.y);
+    ctx.lineTo(ex, ey);
+    ctx.strokeStyle = 'rgba(80, 140, 220, 0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Arrowhead
+    const angle = Math.atan2(dy, dx);
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex - 9 * Math.cos(angle - 0.45), ey - 9 * Math.sin(angle - 0.45));
+    ctx.lineTo(ex - 9 * Math.cos(angle + 0.45), ey - 9 * Math.sin(angle + 0.45));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(80, 140, 220, 0.8)';
+    ctx.fill();
+  }
+
+  // Nodes
+  for (const [val, pos] of nodes) {
+    const isCycle  = cycleNodes.has(val);
+    const isStart  = startNodes.has(val);
+
+    // Pop-in scale: new nodes spawn large and shrink to normal over ~1s
+    const elapsed  = (now - pos.birthTime) / 1000;
+    const popScale = 1 + 2.2 * Math.exp(-elapsed * 2.8);
+    const baseR    = isStart ? START_R : NODE_R;
+    const r        = baseR * popScale;
+
+    // Glow for cycle nodes (and starting nodes)
+    if (isCycle || isStart) {
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, r + (isStart ? 8 : 6), 0, Math.PI * 2);
+      ctx.fillStyle = isStart
+        ? 'rgba(120, 180, 255, 0.15)'
+        : 'rgba(255, 215, 50, 0.18)';
+      ctx.fill();
+    }
+
+    // (no hover highlight — clicking shows a tooltip instead)
+
+    // Node circle
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = valColor(val);
+    ctx.fill();
+    ctx.strokeStyle = isCycle  ? 'rgba(255,215,50,0.9)'
+                    : isStart  ? 'rgba(140,200,255,0.9)'
+                    : 'rgba(255,255,255,0.18)';
+    ctx.lineWidth   = (isCycle || isStart) ? 2.5 : 1;
+    ctx.stroke();
+
+    // Label — scale font with node size
+    const label = val > 9999 ? String(val).slice(0, 4) + '…' : String(val);
+    const fs    = Math.max(8, Math.min(14, Math.round(r * 0.75)));
+    ctx.fillStyle    = 'white';
+    ctx.font         = `bold ${fs}px monospace`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, pos.x, pos.y);
+  }
+}
+
+// ── Outcome badge ────────────────────────────────────────────────────────────
+const OUTCOME_COLOR = {
+  converge:   '#55dd77',
+  cycle:      '#ffcc33',
+  diverge:    '#ff7755',
+  noninteger: '#9999aa',
+  timeout:    '#9999aa',
+};
+const OUTCOME_LABEL = {
+  converge:   'converges → 1',
+  cycle:      'enters cycle',
+  diverge:    'diverges',
+  noninteger: 'non-integer',
+  timeout:    'timed out',
+};
+
+// ── App ──────────────────────────────────────────────────────────────────────
+function App() {
+  const GRID_BLOCK_SIZE = 100;
+
+  // Read URL params: ?m=5&a=1&d=2
+  const sp = new URLSearchParams(window.location.search);
+  const urlM = sp.get('m'), urlA = sp.get('a'), urlD = sp.get('d');
+
+  const seed   = parseInt(sp.get('seed') ?? '27');
+  const urlKey = sp.get('key') ?? '';
+
+  const [m, setM]           = useState(parseInt(urlM ?? '3'));
+  const [a, setA]           = useState(parseInt(urlA ?? '-1'));
+  const [d, setD]           = useState(parseInt(urlD ?? '2'));
+  const [apiKey, setApiKey] = useState(() => {
+    // Try URL first, then localStorage, then empty
+    return urlKey || localStorage.getItem('openrouter_key') || '';
+  });
+  const [showKeyInput, setShowKeyInput] = useState(!urlKey && !localStorage.getItem('openrouter_key'));
+  const [inputVal, setInputVal] = useState('');
+  const [ghToken, setGhToken] = useState(() => localStorage.getItem('gh_token') || '');
+  const [showGhInput, setShowGhInput] = useState(false);
+  const [ghSaveStatus, setGhSaveStatus] = useState(null); // null | 'saving' | 'saved' | 'error'
+  const [log, setLog]       = useState([]);
+
+  // Physics state lives in refs — no React re-render needed each frame
+  const nodesRef  = useRef(new Map());
+  const edgesRef  = useRef([]);
+  const cyclesRef = useRef(new Set());
+  const startNodesRef = useRef(new Set());
+  const canvasRef = useRef(null);
+  const paramsRef = useRef({ m, a, d });
+  const rafRef    = useRef(null);
+  const hoveredNodeRef = useRef(null);
+
+  const [overflow, setOverflow] = useState(null);
+  const [showDataTable, setShowDataTable] = useState(false);
+  const [visitedNums, setVisitedNums] = useState(new Set());
+  const [inputWarning, setInputWarning] = useState('');
+  const [savedCases, setSavedCases] = useState([]);
+  const [gridStart, setGridStart] = useState(1);
+  const [gridCount, setGridCount] = useState(4);
+
+  // ── Chat state ───────────────────────────────────────────────────────────────
+  const SYSTEM_PROMPT = `You are ZhengGPT, a mathematical thinking partner helping students investigate a parameterized sequence rule.
+
+CONTEXT - What the student sees in the applet:
+- An interactive graph showing sequences as connected nodes (bubbles) with arrows
+- Each starting number they enter creates a visual path through the graph
+- The rule is: f(n) = n/d (if even) or f(n) = mn + b (if odd), where m, b, and d are parameters they can adjust
+- Outcomes are automatically detected: converges to 1, enters a cycle, or diverges
+- A results log shows which numbers they've tested and what happened
+- They can click nodes to inspect them, add multiple numbers at once, and view a data table
+- There is a bright orange "💾 Download Chat" button at the bottom of this chat panel that saves our full conversation as a text file
+
+WHAT YOU CAN'T SEE:
+- You cannot see the visual graph or their data table
+- You don't know which specific numbers they've tried unless they tell you
+- You don't know their current m, b, and d parameter values unless they tell you
+
+YOUR ROLE:
+- Help them notice patterns in the data THEY describe to you
+- Ask questions that push them to test specific hypotheses
+- Never compute sequences yourself - the applet does that instantly
+- Never tell them what will happen - ask them to test it and report back
+- Never reveal this is related to the Collatz conjecture or mention "Collatz" by name
+- If they haven't told you their parameters or data, ask them to describe what they're seeing first
+- If they ask about saving/downloading the chat, tell them to click the bright orange "Download Chat" button at the bottom of the chat panel
+
+RESPONSE STYLE:
+- Keep answers short (2-4 sentences max)
+- Ask ONE focused question at a time
+- If they ask you to "just tell them," playfully refuse and redirect to what they could try next
+- Be encouraging when they make observations
+- Respond in whatever language they use
+
+REMEMBER: You're a thinking partner, not an oracle. Your job is to help them think through their own observations, not to give them answers or make claims about sequences you haven't seen.`;
+
+  const [chatMessages, setChatMessages] = useState([
+    { role: 'assistant', content: 'Hi! I\'m here to help you think through what you\'re discovering. What patterns are you noticing in your sequences?' }
+  ]);
+  const [chatInput,   setChatInput]   = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  function saveApiKey(key) {
+    const trimmed = key.trim();
+    setApiKey(trimmed);
+    if (trimmed) {
+      localStorage.setItem('openrouter_key', trimmed);
+      setShowKeyInput(false);
+    }
+  }
+
+  function clearApiKey() {
+    setApiKey('');
+    localStorage.removeItem('openrouter_key');
+    setShowKeyInput(true);
+  }
+
+  async function saveToGitHub(filename, content) {
+    try {
+      const encoded = btoa(unescape(encodeURIComponent(content)));
+      const res = await fetch(
+        `https://api.github.com/repos/OhioMathTeacher/collatz-explorer/contents/Collatz%20Data/${encodeURIComponent(filename)}`,
+        {
+          method: 'PUT',
+          headers: { 'Authorization': `token ${ghToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: `Data submission ${filename}`, content: encoded }),
+        }
+      );
+      return res.ok;
+    } catch { return false; }
+  }
+
+  async function downloadChatTranscript() {
+    const now = new Date();
+    const timestamp = now.toISOString().replace('T', ' ').substring(0, 19);
+    const dateStr = now.toISOString().substring(0, 10);
+    
+    // Create formatted transcript
+    let transcript = `========================================\n`;
+    transcript += `COLLATZ VARIANT EXPLORER - CHAT TRANSCRIPT\n`;
+    transcript += `========================================\n\n`;
+    transcript += `Date/Time: ${timestamp}\n`;
+    transcript += `Parameters: m=${m}, b=${a}, d=${d}\n`;
+    transcript += `Numbers Explored: ${log.length} starting values\n\n`;
+    
+    if (log.length > 0) {
+      transcript += `EXPLORATION SUMMARY:\n`;
+      transcript += `${'─'.repeat(40)}\n`;
+      log.slice().reverse().forEach(entry => {
+        transcript += `  ${entry.start} → ${OUTCOME_LABEL[entry.outcome]} (${entry.steps} steps)\n`;
+      });
+      transcript += `\n`;
+    }
+    
+    transcript += `CONVERSATION WITH ZhengGPT:\n`;
+    transcript += `${'─'.repeat(40)}\n\n`;
+    
+    chatMessages.forEach((msg, i) => {
+      const speaker = msg.role === 'user' ? 'STUDENT' : 'ZhengGPT';
+      transcript += `[${speaker}]\n${msg.content}\n\n`;
+    });
+    
+    transcript += `${'─'.repeat(40)}\n`;
+    transcript += `End of transcript\n`;
+    
+    // Create download
+    const blob = new Blob([transcript], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `collatz-chat-${dateStr}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    // Save to GitHub if token is configured
+    if (ghToken) {
+      const filename = `collatz-${now.toISOString().slice(0,19).replace(/:/g,'-')}.txt`;
+      setGhSaveStatus('saving');
+      const ok = await saveToGitHub(filename, transcript);
+      setGhSaveStatus(ok ? 'saved' : 'error');
+      setTimeout(() => setGhSaveStatus(null), 4000);
+    }
+  }
+
+  async function sendChat() {
+    const text = chatInput.trim();
+    if (!text || chatLoading) return;
+    if (!apiKey) {
+      setShowKeyInput(true);
+      return;
+    }
+    const userMsg = { role: 'user', content: text };
+    const newMessages = [...chatMessages, userMsg];
+    setChatMessages(newMessages);
+    setChatInput('');
+    setChatLoading(true);
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': window.location.href,
+          'X-Title': 'Collatz Variant Explorer',
+        },
+        body: JSON.stringify({
+          model: 'deepseek/deepseek-chat',
+          messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...newMessages],
+          max_tokens: 200,
+        }),
+      });
+      const data = await res.json();
+      const reply = data.choices?.[0]?.message?.content ?? 'Something went wrong. Try again.';
+      setChatMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+    } catch (e) {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Network error. Check your connection.' }]);
+    }
+    setChatLoading(false);
+  }
+
+
+  useEffect(() => { paramsRef.current = { m, a, d }; }, [m, a, d]);
+
+  // Load initial example sequence on mount
+  useEffect(() => {
+    // Small delay so canvas has sized itself first
+    const t = setTimeout(() => {
+      // Load a simple example: 5, 7, 13 - students can see convergence patterns
+      [5, 7, 13].forEach((n, i) => {
+        setTimeout(() => addNumberVal(n), i * 400);
+      });
+    }, 300);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Resize canvas to fill its container
+  useEffect(() => {
+    function resize() {
+      const cvs = canvasRef.current;
+      if (!cvs) return;
+      cvs.width  = cvs.offsetWidth;
+      cvs.height = cvs.offsetHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  // Animation loop
+  useEffect(() => {
+    let alive = true;
+    function tick() {
+      if (!alive) return;
+      const cvs = canvasRef.current;
+      if (cvs && cvs.width > 0) {
+        physicsStep(nodesRef.current, edgesRef.current, cvs.width, cvs.height);
+        drawGraph(cvs, nodesRef.current, edgesRef.current,
+                  cyclesRef.current, startNodesRef.current, Date.now(),
+                  paramsRef.current.m, paramsRef.current.a, paramsRef.current.d, hoveredNodeRef.current);
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    }
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { alive = false; cancelAnimationFrame(rafRef.current); };
+  }, []);
+
+  function reset() {
+    nodesRef.current      = new Map();
+    edgesRef.current      = [];
+    cyclesRef.current     = new Set();
+    startNodesRef.current = new Set();
+    setLog([]);
+    setVisitedNums(new Set());
+  }
+
+  function alignGridStart(value) {
+    const safeValue = Math.max(1, parseInt(value || 1, 10) || 1);
+    return Math.floor((safeValue - 1) / GRID_BLOCK_SIZE) * GRID_BLOCK_SIZE + 1;
+  }
+
+  function updateGridStart(value) {
+    setGridStart(alignGridStart(value));
+  }
+
+  function updateGridCount(value) {
+    const next = parseInt(value, 10);
+    if (Number.isNaN(next)) return;
+    setGridCount(Math.max(1, Math.min(20, next)));
+  }
+
+  function focusGridOnValue(value) {
+    const rangeEnd = gridStart + gridCount * GRID_BLOCK_SIZE - 1;
+    if (value < gridStart || value > rangeEnd) {
+      setGridStart(alignGridStart(value));
+    }
+  }
+
+  function changeParam(setter, val) {
+    setter(val);
+    reset();
+  }
+
+  function saveCase(entry) {
+    const key = `${entry.m}:${entry.a}:${entry.d}:${entry.start}:${entry.steps}:${entry.outcome}:${entry.maxValue}`;
+    setSavedCases(prev => {
+      if (prev.some(item => item.key === key)) return prev;
+      return [{ ...entry, key }, ...prev];
+    });
+  }
+
+  function isCaseSaved(entry) {
+    const key = `${entry.m}:${entry.a}:${entry.d}:${entry.start}:${entry.steps}:${entry.outcome}:${entry.maxValue}`;
+    return savedCases.some(item => item.key === key);
+  }
+
+  function removeSavedCase(key) {
+    setSavedCases(prev => prev.filter(entry => entry.key !== key));
+  }
+
+  function addNumberVal(val) {
+    if (isNaN(val) || val <= 0 || val > MAX_START) return;
+    focusGridOnValue(val);
+    const { m, a, d } = paramsRef.current;
+    const { seq, outcome, cycleAt, maxValue } = computeSeq(val, m, a, d);
+    const limited = seq.slice(0, MAX_NODES);
+
+    const cvs = canvasRef.current;
+    const W = cvs?.width  ?? 900;
+    const H = cvs?.height ?? 560;
+
+    // Mark the starting value as an anchor node
+    startNodesRef.current.add(val);
+
+    // Add new nodes with random starting positions near center
+    const now = Date.now();
+    for (const v of limited) {
+      if (!nodesRef.current.has(v)) {
+        nodesRef.current.set(v, {
+          x:  W / 2 + (Math.random() - 0.5) * 250,
+          y:  H / 2 + (Math.random() - 0.5) * 250,
+          vx: (Math.random() - 0.5) * 3,
+          vy: (Math.random() - 0.5) * 3,
+          birthTime: now,
+        });
+      }
+    }
+
+    // Add edges (avoid duplicates)
+    const edgeSet = new Set(edgesRef.current.map(e => `${e.from}:${e.to}`));
+    for (let i = 0; i < limited.length - 1; i++) {
+      const key = `${limited[i]}:${limited[i + 1]}`;
+      if (!edgeSet.has(key)) {
+        edgesRef.current.push({ from: limited[i], to: limited[i + 1] });
+        edgeSet.add(key);
+      }
+    }
+
+    // Mark cycle nodes with yellow glow
+    if ((outcome === 'cycle' || outcome === 'converge') && cycleAt >= 0) {
+      for (let i = cycleAt; i < seq.length; i++) {
+        cyclesRef.current.add(seq[i]);
+      }
+    }
+
+    if (outcome === 'diverge') {
+      setOverflow({ start: val, steps: seq.length - 1, maxValue });
+    }
+
+    setLog(prev =>
+      [{ start: val, outcome, steps: seq.length - 1, maxValue, m, a, d }, ...prev].slice(0, 20)
+    );
+    setVisitedNums(prev => {
+      const next = new Set(prev);
+      for (const v of seq) {
+        if (Number.isSafeInteger(v) && v >= 1 && v <= MAX_VAL) next.add(v);
+      }
+      return next;
+    });
+  }
+
+  function addNumber() {
+    const parsed = parseSingleStartInput(inputVal);
+    if (parsed.kind !== 'ok') {
+      setInputWarning(getStartLimitWarning(inputVal) || 'Enter a positive whole number within the supported range.');
+      return;
+    }
+    const val = parsed.value;
+    setInputWarning('');
+    setInputVal('');
+    addNumberVal(val);
+  }
+
+  function handleInputChange(e) {
+    const nextValue = e.target.value;
+    setInputVal(nextValue);
+    setInputWarning(getStartLimitWarning(nextValue));
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const sign    = a >= 0 ? '+' : '−';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+
+      {/* ── Top bar ── */}
+      <div style={{
+        background: '#0d1528', padding: '8px 14px',
+        display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12,
+        borderBottom: '1px solid #1e2f55', flexShrink: 0,
+      }}>
+        <span style={{ color: '#7aaaf0', fontWeight: 'bold', fontSize: 15, whiteSpace: 'nowrap' }}>
+          Collatz Variant Explorer
+        </span>
+
+        <span style={{ color: '#99bbee', fontSize: 13, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+          <span style={{ color: 'white' }}>f(n) = n/</span>
+          <span style={{ color: PARAM_COLORS.d }}>{d}</span>
+          <span style={{ color: 'white' }}> (even)   |   </span>
+          <span style={{ color: PARAM_COLORS.m }}>{m}</span>
+          <span style={{ color: 'white' }}>n {sign} </span>
+          <span style={{ color: PARAM_COLORS.a }}>{Math.abs(a)}</span>
+          <span style={{ color: 'white' }}> (odd)</span>
+        </span>
+
+        {/* Parameter sliders */}
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+          {[
+            ['m', 'm', PARAM_COLORS.m, m, v => changeParam(setM, v), 1, 9],
+            ['a', 'b', PARAM_COLORS.a, a, v => changeParam(setA, v), -9, 9],
+            ['d', 'd', PARAM_COLORS.d, d, v => changeParam(setD, v), 2, 9],
+          ].map(([key, label, color, val, setter, min, max]) => (
+            <label key={label} style={{ fontSize: 13, display: 'flex', gap: 5, alignItems: 'center' }}>
+              <span style={{ color, minWidth: 18, fontWeight: 'bold' }}>{label} =</span>
+              <input type="range" min={min} max={max} value={val}
+                onChange={e => setter(parseInt(e.target.value))}
+                style={{ width: 72, accentColor: color }} />
+              <span style={{ color, minWidth: 22, fontWeight: 'bold' }}>{val}</span>
+            </label>
+          ))}
+        </div>
+
+        {/* Add number input */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            type="text" inputMode="numeric" value={inputVal}
+            placeholder="Single start value"
+            onChange={handleInputChange}
+            onKeyDown={e => e.key === 'Enter' && addNumber()}
+            style={{
+              width: 150, background: '#1a2d50', border: '1px solid #3355aa',
+              color: 'white', padding: '4px 8px', borderRadius: 4, fontSize: 12,
+            }}
+          />
+          <button onClick={addNumber} style={{
+            background: '#1e44aa', border: 'none', color: 'white',
+            padding: '4px 11px', borderRadius: 4, fontSize: 12,
+          }}>Add</button>
+          <button onClick={reset} style={{
+            background: '#3d1020', border: 'none', color: '#ffaaaa',
+            padding: '4px 12px', borderRadius: 4, fontSize: 12,
+          }}>Reset</button>
+          <button onClick={() => setShowDataTable(!showDataTable)} style={{
+            background: showDataTable ? '#2a4455' : '#1a2d50', border: '1px solid #3355aa',
+            color: 'white', padding: '4px 11px', borderRadius: 4, fontSize: 12,
+          }}>📊 Cases</button>
+            <button
+              type="button"
+              disabled={!log[0] || isCaseSaved(log[0])}
+              onClick={() => log[0] && saveCase(log[0])}
+              style={{
+                background: !log[0] ? '#253247' : isCaseSaved(log[0]) ? '#254231' : 'linear-gradient(135deg, #2f7a44 0%, #49a95f 100%)',
+                border: 'none',
+                color: !log[0] ? '#7f93b0' : 'white',
+                padding: '4px 12px',
+                borderRadius: 4,
+                fontSize: 12,
+                fontWeight: 'bold',
+                cursor: !log[0] || isCaseSaved(log[0]) ? 'default' : 'pointer',
+                boxShadow: !log[0] || isCaseSaved(log[0]) ? 'none' : '0 4px 10px rgba(73, 169, 95, 0.35)',
+              }}>
+              {!log[0] ? 'Save Latest Case' : isCaseSaved(log[0]) ? 'Latest Case Saved' : 'Save Latest Case'}
+            </button>
+            <button
+              type="button"
+              title="Save the most recent result here, or open Cases and save any row from Recent Results."
+              aria-label="How case saving works"
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: '50%',
+                border: '1px solid #44608a',
+                background: '#162040',
+                color: '#9fc3f0',
+                fontSize: 12,
+                fontWeight: 'bold',
+                padding: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'help',
+              }}>
+              ?
+            </button>
+          </div>
+          {inputWarning && (
+            <div style={{ color: '#ffb366', fontSize: 11, lineHeight: 1.35, maxWidth: 430 }}>
+              {inputWarning}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── INTEGER OVERFLOW overlay ── */}
+      {overflow && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 20,
+          background: 'rgba(0,0,0,0.93)',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{ fontSize: 'clamp(36px,7vw,88px)', fontWeight: 'bold', color: 'white', letterSpacing: 4, textAlign: 'center', lineHeight: 1.1 }}>
+            VALUE LIMIT<br/>REACHED
+          </div>
+          <div style={{ color: '#ff8866', fontSize: 16, marginTop: 20, textAlign: 'center' }}>
+            Starting value <strong>{formatValue(overflow.start)}</strong> exceeded {formatValue(MAX_VAL)} after {overflow.steps} steps
+          </div>
+          <div style={{ color: '#aabbd0', fontSize: 13, marginTop: 10, textAlign: 'center', maxWidth: 560 }}>
+            This is not an input error. The sequence kept growing, so the app stopped once it crossed the current exploration ceiling. Peak value reached: <strong>{formatValue(overflow.maxValue)}</strong>.
+          </div>
+          <button onClick={() => setOverflow(null)} style={{
+            marginTop: 36, background: 'transparent',
+            border: '1px solid #445566', color: '#aabbcc',
+            padding: '8px 28px', borderRadius: 4, fontSize: 14, letterSpacing: 2,
+          }}>
+            CONTINUE
+          </button>
+        </div>
+      )}
+
+      {/* ── Canvas + log panel ── */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
+
+        {/* Main canvas */}
+        <canvas ref={canvasRef}
+          style={{ flex: 1, display: 'block', minWidth: 0 }} />
+
+        {/* Data Table Overlay */}
+        {showDataTable && (
+          <div style={{
+            position: 'absolute', top: 60, left: 20, right: 320,
+            maxHeight: 'calc(100% - 80px)', overflowY: 'auto',
+            background: 'rgba(10, 20, 40, 0.96)', border: '2px solid #4477aa',
+            borderRadius: 8, padding: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.7)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <span style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 14 }}>Cases</span>
+              <button onClick={() => setShowDataTable(false)} style={{
+                background: 'transparent', border: '1px solid #4477aa',
+                color: '#aabbcc', borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer'
+              }}>Close</button>
+            </div>
+            <div style={{ color: '#7f93b0', fontSize: 11, lineHeight: 1.45, marginBottom: 10 }}>
+              Recent Results fill automatically every time you add a start value. Saved Cases are the examples students choose to keep for pattern-hunting.
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 12, marginBottom: 6 }}>Recent Results</div>
+              <table style={{ width: '100%', fontSize: 12, color: '#ddeeff', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #3355aa' }}>
+                    <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Start</th>
+                    <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Outcome</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Steps</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Peak</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Keep</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {log.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" style={{ padding: '8px 6px', color: '#667788' }}>No results yet. Add a starting value to create a case.</td>
+                    </tr>
+                  ) : log.map((entry, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #223344' }}>
+                      <td style={{ padding: '6px', fontWeight: 'bold' }}>{formatValue(entry.start)}</td>
+                      <td style={{ padding: '6px', color: OUTCOME_COLOR[entry.outcome] }}>
+                        {OUTCOME_LABEL[entry.outcome]}
+                      </td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: '#99aacc' }}>{entry.steps}</td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: '#99aacc' }}>{formatValue(entry.maxValue)}</td>
+                      <td style={{ padding: '6px', textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          onClick={() => saveCase(entry)}
+                          disabled={isCaseSaved(entry)}
+                          style={{
+                            background: isCaseSaved(entry) ? '#253247' : '#234f2d',
+                            border: `1px solid ${isCaseSaved(entry) ? '#445566' : '#2f7a44'}`,
+                            color: isCaseSaved(entry) ? '#9ab0c8' : '#dff5e5',
+                            borderRadius: 4,
+                            padding: '3px 8px',
+                            fontSize: 10,
+                            cursor: isCaseSaved(entry) ? 'default' : 'pointer',
+                          }}>
+                          {isCaseSaved(entry) ? 'Saved' : 'Save'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 12 }}>Saved Cases</div>
+                {savedCases.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSavedCases([])}
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid #445566',
+                      color: '#aabbcc',
+                      borderRadius: 4,
+                      padding: '2px 8px',
+                      fontSize: 10,
+                    }}>
+                    Clear Saved
+                  </button>
+                )}
+              </div>
+              <table style={{ width: '100%', fontSize: 12, color: '#ddeeff', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #3355aa' }}>
+                    <th style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.m }}>m</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.a }}>b</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.d }}>d</th>
+                    <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Start</th>
+                    <th style={{ padding: '6px', textAlign: 'left', color: '#88ccff' }}>Outcome</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Steps</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Peak</th>
+                    <th style={{ padding: '6px', textAlign: 'right', color: '#88ccff' }}>Remove</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {savedCases.length === 0 ? (
+                    <tr>
+                      <td colSpan="8" style={{ padding: '8px 6px', color: '#667788' }}>No saved cases yet. Save a few interesting examples from Recent Results to compare patterns.</td>
+                    </tr>
+                  ) : savedCases.map(entry => (
+                    <tr key={entry.key} style={{ borderBottom: '1px solid #223344' }}>
+                      <td style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.m }}>{entry.m}</td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.a }}>{entry.a}</td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: PARAM_COLORS.d }}>{entry.d}</td>
+                      <td style={{ padding: '6px', fontWeight: 'bold' }}>{formatValue(entry.start)}</td>
+                      <td style={{ padding: '6px', color: OUTCOME_COLOR[entry.outcome] }}>{OUTCOME_LABEL[entry.outcome]}</td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: '#99aacc' }}>{entry.steps}</td>
+                      <td style={{ padding: '6px', textAlign: 'right', color: '#99aacc' }}>{formatValue(entry.maxValue)}</td>
+                      <td style={{ padding: '6px', textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          onClick={() => removeSavedCase(entry.key)}
+                          style={{
+                            background: 'transparent',
+                            border: '1px solid #445566',
+                            color: '#aabbcc',
+                            borderRadius: 4,
+                            padding: '3px 8px',
+                            fontSize: 10,
+                          }}>
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ── ZhengGPT Chat Panel ── */}
+        <div style={{
+          width: 300, background: '#0a1020', borderLeft: '1px solid #1e2f55',
+          display: 'flex', flexDirection: 'column', flexShrink: 0, order: 2,
+        }}>
+          <div style={{ padding: '8px 12px', borderBottom: '1px solid #1e2f55',
+            color: '#7aaaf0', fontWeight: 'bold', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>ZhengGPT {!apiKey && <span style={{ color: '#ff7755', fontSize: 11 }}>— no key</span>}</span>
+            {apiKey && (
+              <button onClick={clearApiKey} style={{
+                background: 'transparent', border: '1px solid #3a4a66',
+                color: '#7799bb', fontSize: 10, padding: '2px 6px', borderRadius: 3, cursor: 'pointer'
+              }}>Change Key</button>
+            )}
+          </div>
+
+          {/* API Key Input (shown when no key is set) */}
+          {showKeyInput && (
+            <div style={{ padding: '10px', background: '#0f1a2a', borderBottom: '1px solid #1e2f55' }}>
+              <div style={{ color: '#99bbdd', fontSize: 11, marginBottom: 6 }}>Enter your OpenRouter API key:</div>
+              <input
+                type="password"
+                placeholder="sk-or-v1-..."
+                onKeyDown={e => e.key === 'Enter' && saveApiKey(e.target.value)}
+                style={{
+                  width: '100%', background: '#162040', border: '1px solid #2a3f66',
+                  color: 'white', borderRadius: 4, padding: '5px 8px', fontSize: 11,
+                  fontFamily: 'monospace'
+                }}
+              />
+              <button onClick={e => {
+                const input = e.target.previousElementSibling;
+                saveApiKey(input.value);
+              }} style={{
+                marginTop: 6, background: '#1e44aa', border: 'none',
+                color: 'white', borderRadius: 4, padding: '4px 10px', fontSize: 11, cursor: 'pointer', width: '100%'
+              }}>Save Key</button>
+              <div style={{ color: '#667788', fontSize: 10, marginTop: 6, lineHeight: 1.3 }}>
+                Get a free key at <a href="https://openrouter.ai" target="_blank" style={{ color: '#5588dd' }}>openrouter.ai</a>
+              </div>
+            </div>
+          )}
+
+          {/* Messages */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px', fontSize: 12, lineHeight: 1.5 }}>
+            {chatMessages.map((msg, i) => (
+              <div key={i} style={{
+                marginBottom: 10,
+                textAlign: msg.role === 'user' ? 'right' : 'left',
+              }}>
+                <span style={{
+                  display: 'inline-block', maxWidth: '85%',
+                  background: msg.role === 'user' ? '#1e44aa' : '#162040',
+                  color: msg.role === 'user' ? '#ddeeff' : '#aac4ee',
+                  borderRadius: msg.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                  padding: '6px 10px',
+                }}>
+                  {msg.content}
+                </span>
+              </div>
+            ))}
+            {chatLoading && (
+              <div style={{ color: '#446688', fontStyle: 'italic', fontSize: 11 }}>ZhengGPT is thinking…</div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Download Button - Prominent */}
+          {chatMessages.length > 1 && (
+            <div style={{ padding: '10px', borderTop: '1px solid #1e2f55', background: '#0a1525' }}>
+              <button onClick={downloadChatTranscript} style={{
+                width: '100%',
+                background: 'linear-gradient(135deg, #ff6b35 0%, #f7931e 100%)',
+                border: 'none',
+                color: 'white',
+                borderRadius: 6,
+                padding: '12px 16px',
+                fontSize: 15,
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(255, 107, 53, 0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                transition: 'transform 0.2s, box-shadow 0.2s'
+              }}
+              onMouseEnter={e => {
+                e.target.style.transform = 'translateY(-2px)';
+                e.target.style.boxShadow = '0 6px 16px rgba(255, 107, 53, 0.6)';
+              }}
+              onMouseLeave={e => {
+                e.target.style.transform = 'translateY(0)';
+                e.target.style.boxShadow = '0 4px 12px rgba(255, 107, 53, 0.4)';
+              }}>
+                <span style={{ fontSize: 20 }}>💾</span>
+                <span>Download Chat</span>
+              </button>
+            </div>
+          )}
+
+          {/* Input */}
+          <div style={{ padding: '8px', borderTop: chatMessages.length > 1 ? 'none' : '1px solid #1e2f55', display: 'flex', gap: 6 }}>
+            <input
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && sendChat()}
+              placeholder="Ask ZhengGPT…"
+              style={{
+                flex: 1, background: '#162040', border: '1px solid #2a3f66',
+                color: 'white', borderRadius: 4, padding: '5px 8px', fontSize: 12,
+              }}
+            />
+            <button onClick={sendChat} disabled={chatLoading} style={{
+              background: chatLoading ? '#112' : '#1e44aa', border: 'none',
+              color: 'white', borderRadius: 4, padding: '5px 10px', fontSize: 12, cursor: 'pointer',
+            }}>Send</button>
+          </div>
+        </div>
+
+        {/* ── Scoreboard ── */}
+        <div style={{
+          width: 290, background: '#0a1020', borderLeft: '1px solid #1e2f55',
+          display: 'flex', flexDirection: 'column', flexShrink: 0, order: 1,
+          overflowY: 'auto', padding: '8px 10px',
+        }}>
+          <div style={{
+            color: '#7aaaf0', fontWeight: 'bold', fontSize: 12,
+            textAlign: 'center', letterSpacing: 2, marginBottom: 8,
+          }}>DATA REFERENCE GRIDS</div>
+
+          <div style={{
+            marginBottom: 12,
+            padding: '8px',
+            background: '#0f1a2a',
+            border: '1px solid #1e2f55',
+            borderRadius: 6,
+          }}>
+            <div style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 11, marginBottom: 8, letterSpacing: 1 }}>
+              GRID WINDOW
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 76px', gap: 6, marginBottom: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={{ color: '#99bbdd', fontSize: 10 }}>Start at</span>
+                <div style={{
+                  width: '100%',
+                  background: '#101a31',
+                  border: '1px solid #243858',
+                  color: '#ddeeff',
+                  borderRadius: 4,
+                  padding: '6px 8px',
+                  fontSize: 11,
+                  fontWeight: 'bold',
+                  letterSpacing: 0.5,
+                  cursor: 'default',
+                  userSelect: 'none',
+                }}>
+                  {formatValue(gridStart)}
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={{ color: '#99bbdd', fontSize: 10 }}>Blocks</span>
+                <div style={{
+                  width: '100%',
+                  background: '#101a31',
+                  border: '1px solid #243858',
+                  color: '#ddeeff',
+                  borderRadius: 4,
+                  padding: '6px 8px',
+                  fontSize: 11,
+                  fontWeight: 'bold',
+                  textAlign: 'center',
+                  cursor: 'default',
+                  userSelect: 'none',
+                }}>
+                  {gridCount}
+                </div>
+              </div>
+            </div>
+            <div style={{ color: '#667f9f', fontSize: 10, marginBottom: 6 }}>
+              Use Previous/Next to move the visible window.
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                onClick={() => updateGridStart(Math.max(1, gridStart - gridCount * GRID_BLOCK_SIZE))}
+                style={{
+                  flex: 1,
+                  background: '#162040',
+                  border: '1px solid #29406a',
+                  color: '#ddeeff',
+                  borderRadius: 4,
+                  padding: '5px 6px',
+                  fontSize: 10,
+                }}>
+                Previous {gridCount * GRID_BLOCK_SIZE}
+              </button>
+              <button
+                type="button"
+                onClick={() => updateGridStart(gridStart + gridCount * GRID_BLOCK_SIZE)}
+                style={{
+                  flex: 1,
+                  background: '#162040',
+                  border: '1px solid #29406a',
+                  color: '#ddeeff',
+                  borderRadius: 4,
+                  padding: '5px 6px',
+                  fontSize: 10,
+                }}>
+                Next {gridCount * GRID_BLOCK_SIZE}
+              </button>
+            </div>
+          </div>
+
+          <div style={{
+            marginBottom: 12,
+            padding: '8px',
+            background: '#0f1a2a',
+            border: '1px solid #1e2f55',
+            borderRadius: 6,
+          }}>
+            <div style={{ color: '#88ccff', fontWeight: 'bold', fontSize: 11, marginBottom: 6, letterSpacing: 1 }}>
+              RECENT STARTS
+            </div>
+            {log.length === 0 ? (
+              <div style={{ color: '#667788', fontSize: 11, lineHeight: 1.4 }}>
+                Large starting values will appear here and in the table.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {log.slice(0, 8).map((entry, i) => (
+                  <button
+                    key={`${entry.start}-${entry.steps}-${i}`}
+                    type="button"
+                    onClick={() => {
+                      updateGridStart(entry.start);
+                      addNumberVal(entry.start);
+                    }}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr auto',
+                      gap: 6,
+                      alignItems: 'center',
+                      width: '100%',
+                      background: '#162040',
+                      border: '1px solid #29406a',
+                      color: '#ddeeff',
+                      borderRadius: 4,
+                      padding: '5px 7px',
+                      fontSize: 11,
+                      textAlign: 'left',
+                    }}>
+                    <span>{formatValue(entry.start)}</span>
+                    <span style={{ color: OUTCOME_COLOR[entry.outcome], fontSize: 10 }}>{OUTCOME_LABEL[entry.outcome]}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {Array.from({ length: gridCount }, (_, block) => {
+            const blockStart = gridStart + block * GRID_BLOCK_SIZE;
+            const blockEnd = blockStart + GRID_BLOCK_SIZE - 1;
+            return (
+            <div key={blockStart} style={{ marginBottom: 10 }}>
+              <div style={{ color: '#99bbdd', fontSize: 11, textAlign: 'center', marginBottom: 4 }}>
+                {formatValue(blockStart)} - {formatValue(blockEnd)}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: 2 }}>
+                {Array.from({ length: GRID_BLOCK_SIZE }, (_, i) => blockStart + i).map(n => {
+                  const hit = visitedNums.has(n);
+                  return (
+                    <button key={n} type="button" style={{
+                      aspectRatio: '1',
+                      background: hit ? valColor(n) : '#182840',
+                      border: hit ? '1px solid rgba(255,255,255,0.2)' : '1px solid #1e3566',
+                      borderRadius: 2,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 8, fontWeight: 'bold',
+                      cursor: 'pointer',
+                      padding: 0,
+                      userSelect: 'none',
+                      WebkitUserSelect: 'none',
+                      color: hit ? 'rgba(0,0,0,0.65)' : '#2a4060',
+                    }}
+                    title={`Add ${n}`}
+                    onMouseDown={e => {
+                      e.preventDefault();
+                      setInputVal(String(n));
+                      addNumberVal(n);
+                    }}>
+                      {n}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );})}
+
+          <div style={{
+            marginTop: 6,
+            marginBottom: 8,
+            color: '#ff3b30',
+            fontSize: 20,
+            fontWeight: 700,
+            lineHeight: 1.18,
+            fontFamily: 'Trebuchet MS, Segoe UI, sans-serif',
+          }}>
+            Use the grid window controls to jump anywhere. Larger values stay visible in Recent Starts and the table.
+          </div>
+
+          <div style={{
+            marginTop: 'auto',
+            borderTop: '1px solid #1e2f55',
+            paddingTop: 8,
+            color: '#667788',
+            fontSize: 11,
+            lineHeight: 1.4,
+          }}>
+            <div>
+              Color scale: 
+              <span style={{ color: '#4ecb6f', fontWeight: 'bold' }}> green</span>
+              {' '}→ 
+              <span style={{ color: '#c4d83f', fontWeight: 'bold' }}> yellow</span>
+              {' '}→ 
+              <span style={{ color: '#f0a23a', fontWeight: 'bold' }}> orange</span>
+              {' '}→ 
+              <span style={{ color: '#e45a4f', fontWeight: 'bold' }}> red</span>
+            </div>
+            <div style={{ marginTop: 4 }}>
+              Green shows smaller values; red shows larger values.
+            </div>
+            <div style={{ marginTop: 2 }}>
+              Glowing nodes mark detected cycle values.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
