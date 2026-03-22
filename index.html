@@ -758,15 +758,19 @@ function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, h
     // Pop-in scale: new nodes spawn large and shrink to normal over ~1s
     const elapsed  = (now - pos.birthTime) / 1000;
     const popScale = 1 + 2.2 * Math.exp(-elapsed * 2.8);
+    
+    // Breathing animation for start nodes (gentle pulse)
+    const breathe = isStart ? 1 + 0.08 * Math.sin(now / 800) : 1;
+    
     const baseR    = isStart ? START_R : NODE_R;
-    const r        = baseR * popScale;
+    const r        = baseR * popScale * breathe;
 
     // Glow for cycle nodes (and starting nodes)
     if (isCycle || isStart) {
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, r + (isStart ? 8 : 6), 0, Math.PI * 2);
       ctx.fillStyle = isStart
-        ? 'rgba(120, 180, 255, 0.15)'
+        ? 'rgba(160, 100, 220, 0.25)'
         : 'rgba(255, 215, 50, 0.18)';
       ctx.fill();
     }
@@ -776,12 +780,12 @@ function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, h
     // Node circle
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = valColor(val);
+    ctx.fillStyle = isStart ? '#9b5fc0' : valColor(val);
     ctx.fill();
     ctx.strokeStyle = isDragging ? 'rgba(255,255,255,0.98)'
             : isPinned  ? 'rgba(170,230,255,0.98)'
             : isCycle   ? 'rgba(255,215,50,0.9)'
-            : isStart   ? 'rgba(140,200,255,0.9)'
+            : isStart   ? 'rgba(180,130,230,0.95)'
             : 'rgba(255,255,255,0.18)';
     ctx.lineWidth   = isDragging ? 3.5 : (isPinned || isCycle || isStart) ? 2.5 : 1;
     ctx.stroke();
