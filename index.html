@@ -1118,7 +1118,8 @@ function App() {
     edgesRef.current      = [];
     cyclesRef.current     = new Set();
     startNodesRef.current = new Set();
-    setLog([]);
+    // Keep log (Recent Results) and savedCases for research data
+    // Only clear visual graph and grid highlights
     setVisitedNums(new Set());
   }
 
