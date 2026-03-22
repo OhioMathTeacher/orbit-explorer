@@ -4,34 +4,35 @@ An interactive visualization tool for exploring parameterized sequence rules thr
 
 ## Versions
 
-### Release Version
+### Version 0.5
 
-**[Launch the Release Version](https://ohiomathteacher.github.io/collatz-explorer/)**
+**[Launch Version 0.5](https://ohiomathteacher.github.io/collatz-explorer/)**
 
-Features in the Release Version:
+Features in Version 0.5:
 
-- Stable classroom-ready interface
+- Orbit Explorer interface
 - Interactive graph visualization of sequence paths
 - Adjustable parameters for m, b, and d
 - Single-value entry for starting numbers
 - Cases panel with Recent Results and Saved Cases
 - Large-value handling with clearer warning messages
 - Reference grids with movable viewing windows and Recent Starts
-- AI thinking partner via OpenRouter
-
-### Beta Version
-
-**[Launch the Beta Version](https://ohiomathteacher.github.io/collatz-explorer/index-experimental.html)**
-
-Features in the Beta Version:
-
-- Everything in the Release Version
 - Draggable number balls that pin in place when moved
 - In-canvas Reset Layout control
 - Grid on/off toggle
 - Light theme toggle
 - Language dropdown for English, Spanish, and Simplified Chinese
-- Ongoing experimental interface refinements before release
+- AI thinking partner via OpenRouter
+
+### Release 1.0
+
+**[Launch Release 1.0](https://ohiomathteacher.github.io/collatz-explorer/index-experimental.html)**
+
+Features in Release 1.0:
+
+- Everything currently in Version 0.5
+- Experimental branch for upcoming release polishing
+- Continued testing space for interface refinements before wider rollout
 
 ## The Rule
 
