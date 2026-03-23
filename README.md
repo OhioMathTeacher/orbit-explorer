@@ -6,7 +6,7 @@ An interactive visualization tool for exploring parameterized sequence rules thr
 
 ### Version 2 (Latest) ✨
 
-**[Launch Version 2](https://ohiomathteacher.github.io/collatz-explorer/)** 
+**[Launch Version 2](https://ohiomathteacher.github.io/orbit-explorer/)**
 
 **New in v2 (March 22, 2026):**
 
@@ -33,7 +33,7 @@ All features from v1 remain available.
 
 ### Version 1 (Stable)
 
-**[Launch Version 1](https://github.com/OhioMathTeacher/collatz-explorer/tree/v1)** | [View v1 Source](https://github.com/OhioMathTeacher/collatz-explorer/blob/v1/index.html)
+**[Launch Version 1](https://github.com/OhioMathTeacher/orbit-explorer/tree/v1)** | [View v1 Source](https://github.com/OhioMathTeacher/orbit-explorer/blob/v1/index.html)
 
 **Features in v1:**
 
@@ -57,7 +57,7 @@ All features from v1 remain available.
 
 ### Version 0.5 (Beta Archive)
 
-**[Launch Version 0.5](https://ohiomathteacher.github.io/collatz-explorer/index-experimental.html)**
+**[Launch Version 0.5](https://ohiomathteacher.github.io/orbit-explorer/index-experimental.html)**
 
 Early beta version used for initial testing. See v1 or v2 for current features.
 

@@ -918,7 +918,7 @@ function App() {
     try {
       const encoded = btoa(unescape(encodeURIComponent(content)));
       const res = await fetch(
-        `https://api.github.com/repos/OhioMathTeacher/collatz-explorer/contents/Collatz%20Data/${encodeURIComponent(filename)}`,
+        `https://api.github.com/repos/OhioMathTeacher/orbit-explorer/contents/Orbit%20Data/${encodeURIComponent(filename)}`,
         {
           method: 'PUT',
           headers: { 'Authorization': `token ${ghToken}`, 'Content-Type': 'application/json' },
