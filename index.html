@@ -9,7 +9,7 @@
   <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
-      var BUILD = '1774216101-r3';
+      var BUILD = '1774216101-r4';
       var params = new URLSearchParams(window.location.search);
       if (params.get('fr') !== BUILD || !params.has('cb')) {
         params.set('fr', BUILD);
@@ -1065,7 +1065,7 @@ function App() {
   const [maxVisibleSteps, setMaxVisibleSteps] = useState(50);
   const [language, setLanguage] = useState(() => localStorage.getItem('orbit_language') || 'en');
   const dataTableDragRef = useRef(null);
-  const dataTableResizeRef = useRef(null);
+  const dataTablePanelRef = useRef(null);
 
   // ── Chat state ───────────────────────────────────────────────────────────────
   const t = (key, values) => translate(language, key, values);
@@ -1093,19 +1093,9 @@ function App() {
     if (target.closest('button')) return;
     event.preventDefault();
     dataTableDragRef.current = {
+      pointerId: event.pointerId,
       offsetX: event.clientX - dataTableRect.left,
       offsetY: event.clientY - dataTableRect.top,
-    };
-  };
-
-  const startDataTableResize = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    dataTableResizeRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      startWidth: dataTableRect.width,
-      startHeight: dataTableRect.height,
     };
   };
 
@@ -1115,44 +1105,53 @@ function App() {
 
   useEffect(() => {
     const handlePointerMove = (event) => {
-      if (dataTableDragRef.current) {
+      if (dataTableDragRef.current && event.pointerId === dataTableDragRef.current.pointerId) {
         const { offsetX, offsetY } = dataTableDragRef.current;
         setDataTableRect(prev => clampDataTableRect({
           ...prev,
           left: event.clientX - offsetX,
           top: event.clientY - offsetY,
         }));
-        return;
-      }
-
-      if (dataTableResizeRef.current) {
-        const { startX, startY, startWidth, startHeight } = dataTableResizeRef.current;
-        setDataTableRect(prev => clampDataTableRect({
-          ...prev,
-          width: startWidth + (event.clientX - startX),
-          height: startHeight + (event.clientY - startY),
-        }));
       }
     };
 
-    const handlePointerUp = () => {
-      dataTableDragRef.current = null;
-      dataTableResizeRef.current = null;
+    const handlePointerUp = (event) => {
+      if (dataTableDragRef.current && event.pointerId === dataTableDragRef.current.pointerId) {
+        dataTableDragRef.current = null;
+      }
     };
 
     const handleWindowResize = () => {
       setDataTableRect(prev => clampDataTableRect(prev, window.innerWidth, window.innerHeight));
     };
 
-    window.addEventListener('mousemove', handlePointerMove);
-    window.addEventListener('mouseup', handlePointerUp);
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(entries => {
+          const entry = entries[0];
+          if (!entry) return;
+          const { width, height } = entry.contentRect;
+          setDataTableRect(prev => clampDataTableRect({
+            ...prev,
+            width,
+            height,
+          }));
+        })
+      : null;
+
+    if (resizeObserver && dataTablePanelRef.current) {
+      resizeObserver.observe(dataTablePanelRef.current);
+    }
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
     window.addEventListener('resize', handleWindowResize);
     return () => {
-      window.removeEventListener('mousemove', handlePointerMove);
-      window.removeEventListener('mouseup', handlePointerUp);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('resize', handleWindowResize);
+      resizeObserver?.disconnect();
     };
-  }, [dataTableRect.left, dataTableRect.top, dataTableRect.width, dataTableRect.height]);
+  }, [dataTableRect.left, dataTableRect.top]);
 
   useEffect(() => {
     localStorage.setItem('orbit_language', language);
@@ -2141,8 +2140,8 @@ function App() {
 
         {/* Data Table Overlay */}
         {showDataTable && (
-          <div style={{
-            position: 'absolute',
+          <div ref={dataTablePanelRef} style={{
+            position: 'fixed',
             top: dataTableRect.top,
             left: dataTableRect.left,
             width: dataTableRect.width,
@@ -2155,9 +2154,12 @@ function App() {
             flexDirection: 'column',
             overflow: 'hidden',
             zIndex: 20,
+            resize: 'both',
+            minWidth: 540,
+            minHeight: 320,
           }}>
             <div
-              onMouseDown={startDataTableDrag}
+              onPointerDown={startDataTableDrag}
               style={{
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -2165,11 +2167,12 @@ function App() {
                 padding: '12px 12px 10px',
                 cursor: dataTableDragRef.current ? 'grabbing' : 'grab',
                 userSelect: 'none',
+                touchAction: 'none',
               }}>
               <span style={{ color: uiTheme.titleText, fontWeight: 'bold', fontSize: 14 }}>{t('cases')}</span>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
-                  onMouseDown={e => e.stopPropagation()}
+                  onPointerDown={e => e.stopPropagation()}
                   onClick={downloadCasesTable}
                   style={{
                     background: 'linear-gradient(135deg, #2f7a44 0%, #49a95f 100%)',
@@ -2184,7 +2187,7 @@ function App() {
                   💾 Download Cases
                 </button>
                 <button
-                  onMouseDown={e => e.stopPropagation()}
+                  onPointerDown={e => e.stopPropagation()}
                   onClick={() => setShowDataTable(false)}
                   style={{
                     background: 'transparent',
@@ -2319,18 +2322,6 @@ function App() {
                 </table>
               </div>
             </div>
-            <div
-              onMouseDown={startDataTableResize}
-              style={{
-                position: 'absolute',
-                right: 2,
-                bottom: 2,
-                width: 18,
-                height: 18,
-                cursor: 'nwse-resize',
-                background: 'linear-gradient(135deg, transparent 0 48%, rgba(255,255,255,0.15) 48% 56%, transparent 56% 100%)',
-              }}
-            />
           </div>
         )}
 
