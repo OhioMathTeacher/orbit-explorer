@@ -9,7 +9,7 @@
   <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
-      var BUILD = '1774216101-r5';
+      var BUILD = '1774216101-r6';
       var params = new URLSearchParams(window.location.search);
       if (params.get('fr') !== BUILD || !params.has('cb')) {
         params.set('fr', BUILD);
@@ -1112,6 +1112,9 @@ function App() {
 
   const startChatResize = (event) => {
     event.preventDefault();
+    if (event.currentTarget?.setPointerCapture) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
     chatResizeRef.current = {
       pointerId: event.pointerId,
     };
@@ -2380,14 +2383,25 @@ function App() {
             title="Drag to resize ZhengGPT"
             style={{
               position: 'absolute',
-              left: -5,
+              left: 0,
               top: 0,
               bottom: 0,
-              width: 10,
+              width: 12,
               cursor: 'col-resize',
-              zIndex: 3,
+              zIndex: 4,
+              touchAction: 'none',
+              borderRight: `1px solid ${uiTheme.borderStrong}`,
+              background: `linear-gradient(180deg, ${uiTheme.panelBgAlt} 0%, ${uiTheme.panelBg} 100%)`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: uiTheme.textMuted,
+              fontSize: 10,
+              fontWeight: 'bold',
             }}
-          />
+          >
+            ⋮
+          </div>
           {apiKey ? detectChatProvider(apiKey) : null}
           <div style={{ padding: '8px 12px', borderBottom: `1px solid ${uiTheme.border}`,
             color: uiTheme.titleText, fontWeight: 'bold', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
