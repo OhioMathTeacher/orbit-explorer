@@ -9,7 +9,7 @@
   <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
-      var BUILD = '1774216101-r4';
+      var BUILD = '1774216101-r5';
       var params = new URLSearchParams(window.location.search);
       if (params.get('fr') !== BUILD || !params.has('cb')) {
         params.set('fr', BUILD);
@@ -75,6 +75,8 @@ const RESPONSE_LANGUAGE_NAMES = {
   'zh-Hans': 'Simplified Chinese',
 };
 const CHAT_KEY_STORAGE = 'zhenggpt_key';
+const CHAT_PANEL_MIN_WIDTH = 260;
+const CHAT_PANEL_MAX_WIDTH = 720;
 
 function detectChatProvider(apiKey) {
   return apiKey.trim().startsWith('sk-or-v1-') ? 'openrouter' : 'deepseek';
@@ -1064,8 +1066,10 @@ function App() {
   const [useLightTheme, setUseLightTheme] = useState(false);
   const [maxVisibleSteps, setMaxVisibleSteps] = useState(50);
   const [language, setLanguage] = useState(() => localStorage.getItem('orbit_language') || 'en');
+  const [chatPanelWidth, setChatPanelWidth] = useState(320);
   const dataTableDragRef = useRef(null);
   const dataTablePanelRef = useRef(null);
+  const chatResizeRef = useRef(null);
 
   // ── Chat state ───────────────────────────────────────────────────────────────
   const t = (key, values) => translate(language, key, values);
@@ -1088,6 +1092,13 @@ function App() {
     return { top, left, width, height };
   };
 
+  const clampChatPanelWidth = (width, viewportWidth = window.innerWidth) => {
+    // Keep enough space for canvas + data grids while allowing wider chat screenshots.
+    const reservedForCanvasAndGrid = 640;
+    const dynamicMax = Math.max(CHAT_PANEL_MIN_WIDTH, Math.min(CHAT_PANEL_MAX_WIDTH, viewportWidth - reservedForCanvasAndGrid));
+    return Math.min(Math.max(width, CHAT_PANEL_MIN_WIDTH), dynamicMax);
+  };
+
   const startDataTableDrag = (event) => {
     const target = event.target;
     if (target.closest('button')) return;
@@ -1096,6 +1107,13 @@ function App() {
       pointerId: event.pointerId,
       offsetX: event.clientX - dataTableRect.left,
       offsetY: event.clientY - dataTableRect.top,
+    };
+  };
+
+  const startChatResize = (event) => {
+    event.preventDefault();
+    chatResizeRef.current = {
+      pointerId: event.pointerId,
     };
   };
 
@@ -1152,6 +1170,33 @@ function App() {
       resizeObserver?.disconnect();
     };
   }, [dataTableRect.left, dataTableRect.top]);
+
+  useEffect(() => {
+    const handlePointerMove = (event) => {
+      if (!chatResizeRef.current || event.pointerId !== chatResizeRef.current.pointerId) return;
+      const nextWidth = window.innerWidth - event.clientX;
+      setChatPanelWidth(clampChatPanelWidth(nextWidth));
+    };
+
+    const handlePointerUp = (event) => {
+      if (chatResizeRef.current && event.pointerId === chatResizeRef.current.pointerId) {
+        chatResizeRef.current = null;
+      }
+    };
+
+    const handleWindowResize = () => {
+      setChatPanelWidth(prev => clampChatPanelWidth(prev));
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('resize', handleWindowResize);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('resize', handleWindowResize);
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('orbit_language', language);
@@ -2327,9 +2372,22 @@ function App() {
 
         {/* ── ZhengGPT Chat Panel ── */}
         <div style={{
-          width: 300, background: uiTheme.panelBg, borderLeft: `1px solid ${uiTheme.border}`,
-          display: 'flex', flexDirection: 'column', flexShrink: 0, order: 2,
+          width: chatPanelWidth, background: uiTheme.panelBg, borderLeft: `1px solid ${uiTheme.border}`,
+          display: 'flex', flexDirection: 'column', flexShrink: 0, order: 2, position: 'relative',
         }}>
+          <div
+            onPointerDown={startChatResize}
+            title="Drag to resize ZhengGPT"
+            style={{
+              position: 'absolute',
+              left: -5,
+              top: 0,
+              bottom: 0,
+              width: 10,
+              cursor: 'col-resize',
+              zIndex: 3,
+            }}
+          />
           {apiKey ? detectChatProvider(apiKey) : null}
           <div style={{ padding: '8px 12px', borderBottom: `1px solid ${uiTheme.border}`,
             color: uiTheme.titleText, fontWeight: 'bold', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
