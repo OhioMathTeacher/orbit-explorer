@@ -459,7 +459,15 @@ async function askAI(providerId, messages, systemPrompt) {
           role: m.role === 'assistant' ? 'model' : 'user',
           parts: [{ text: m.content }],
         })),
-        generationConfig: { maxOutputTokens: 600, temperature: 0.7 },
+        // Gemini 2.5 Flash thinks by default and maxOutputTokens caps the
+        // thinking and the reply TOGETHER, so the tutor can be cut off mid-word
+        // with none of the budget spent on the answer. Observed at 200 tokens in
+        // journaler-284; 600 is roomier but the mechanism is the same.
+        generationConfig: {
+          maxOutputTokens: 600,
+          temperature: 0.7,
+          thinkingConfig: { thinkingBudget: 0 },
+        },
       }),
     });
     if (!res.ok) {
