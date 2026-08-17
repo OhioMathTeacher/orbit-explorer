@@ -876,7 +876,13 @@ function buildSystemPrompt(language) {
   // (notably Qwen3.5-4B) into extensive meta-reasoning that leaks into the
   // response and burns the token budget before any answer is produced. Keep
   // this brief and trust the model.
-  return `You help a student exploring a sequence-explorer app. Keep replies to one or two short sentences. Answer directly — no reasoning shown, no drafts, no constraint analysis. Respond in ${responseLanguage}.`;
+  // The one sentence about not seeing the screen earns its place: asked "Can I
+  // save this chat?", the model confidently answered "this chat cannot be saved
+  // or exported". It had no way to know -- nothing here tells it what the app
+  // can do -- and it was about to become wrong, since the transcript download is
+  // being wired up. A student has no way to tell an invented answer about the UI
+  // from a real one.
+  return `You help a student exploring a sequence-explorer app. Keep replies to one or two short sentences. Answer directly — no reasoning shown, no drafts, no constraint analysis. You cannot see their screen, so if they ask what the app can do, say so and point them at the buttons on screen. Respond in ${responseLanguage}.`;
 }
 
 function formatValue(value) {
