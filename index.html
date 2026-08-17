@@ -102,6 +102,36 @@
       text-transform: uppercase; color: #7799bb;
       margin: 0.6rem 0 0.5rem;
     }
+    /* Three tabs by what the model costs the person — Local / $0 / Pay (Own Key).
+       The grouping is the point: a student deciding whether they can afford to
+       use this should not have to know which company owns which model name. */
+    .ai-tabs {
+      display: flex; gap: 0.15rem; align-items: center;
+      border-bottom: 1px solid rgba(255,255,255,0.10); margin-bottom: 0.8rem;
+    }
+    .ai-tab {
+      background: none; border: none; border-bottom: 2px solid transparent;
+      margin-bottom: -1px; padding: 0.5rem 0.75rem; cursor: pointer;
+      color: #8a96a8; font-family: inherit; font-size: 0.82rem;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .ai-tab:hover { color: #cfe1ff; }
+    .ai-tab.on { color: #58a6ff; border-bottom-color: #58a6ff; }
+    /* Always visible, on every tab: what is actually selected right now. Without
+       it the tabs hide the answer to the only question the panel exists to
+       answer, since the choice may live on a tab you are not looking at. */
+    .ai-selected {
+      margin-left: auto; padding-right: 0.2rem;
+      font-size: 0.7rem; color: #8a96a8;
+    }
+    .ai-selected b { color: #cfe1ff; font-weight: 600; }
+    .ai-foot { font-size: 0.7rem; color: #6a7686; line-height: 1.45; margin: 0.7rem 0 0; }
+    .ai-disable {
+      background: none; border: none; padding: 0; margin-top: 0.9rem;
+      color: #6a7686; font-family: inherit; font-size: 0.74rem; cursor: pointer;
+    }
+    .ai-disable:hover { color: #9eb2d7; }
+    .ai-disable.on { color: #9eb2d7; }
     .ai-provider-cards {
       display: grid; grid-template-columns: repeat(2,1fr); gap: 0.55rem;
       margin-bottom: 0.4rem;
@@ -126,6 +156,19 @@
     .ai-badge-local { background: rgba(60,80,160,0.30); color: #8aabe0; }
     .ai-badge-none { background: rgba(90,90,90,0.30); color: #888; }
     .ai-key-section { margin: 0.8rem 0 0.4rem; }
+    /* "Get a key ↗" rides on the field's own label. A student who has no key is
+       one click from the page that mints one, at the moment they discover they
+       need it, rather than being told to go and find it. */
+    .ai-key-label {
+      display: flex; justify-content: space-between; align-items: baseline;
+      font-size: 0.68rem; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: #7799bb; margin-bottom: 0.35rem;
+    }
+    .ai-key-label a {
+      text-transform: none; letter-spacing: normal; font-weight: 500;
+      color: #8fb8e8; text-decoration: none;
+    }
+    .ai-key-label a:hover { text-decoration: underline; }
     .ai-key-section input {
       width: 100%; padding: 0.55rem 0.7rem;
       background: rgba(255,255,255,0.06); border: 1px solid rgba(120,180,240,0.25);
@@ -238,27 +281,29 @@ const AI_STORAGE = {
 const AI_CLOUD_PROVIDERS = [
   {
     id: 'anthropic', title: 'Anthropic Claude',
-    model: 'claude-sonnet-5',
+    model: 'claude-sonnet-5', tier: 'paid',
     desc: 'Your own key. Claude Sonnet — powerful and precise.',
     badge: 'Own Key', badgeClass: 'ai-badge-paid',
     keyUrl: 'https://console.anthropic.com/settings/keys', placeholder: 'sk-ant-…',
-    keyHint: 'Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>. Stored only in your browser.',
+    // The "where" now lives in the Get a key ↗ link beside the field, so these
+    // hints carry only what the link cannot: the caveat, and where the key goes.
+    keyHint: 'Stored only in your browser — sent to Anthropic and nowhere else.',
   },
   {
     id: 'gemini', title: 'Gemini 2.5 Flash',
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.5-flash', tier: 'free',
     desc: 'Free tier via Google. Use a personal Gmail account.',
     badge: 'Free', badgeClass: 'ai-badge-free',
     keyUrl: 'https://aistudio.google.com/apikey', placeholder: 'AIza…',
-    keyHint: 'Visit <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com</a> for a free key — <strong style="color:#d4a843">use a personal Gmail, not a school account</strong>. Stored in your browser only.',
+    keyHint: '<strong style="color:#d4a843">Use a personal Gmail, not a school account</strong> — school accounts are usually blocked from AI Studio. Stored only in your browser.',
   },
   {
     id: 'groq', title: 'Groq (GPT-OSS 120B)',
-    model: 'openai/gpt-oss-120b',
+    model: 'openai/gpt-oss-120b', tier: 'free',
     desc: 'Free tier. Any email — no Google account needed.',
     badge: 'Free', badgeClass: 'ai-badge-free',
     keyUrl: 'https://console.groq.com/keys', placeholder: 'gsk_…',
-    keyHint: 'Visit <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a> for a free key — any email works. Stored in your browser only.',
+    keyHint: 'Any email works — no Google account needed. Stored only in your browser.',
   },
 ];
 
@@ -1503,6 +1548,10 @@ function App() {
   // ── AI provider + key state (single source of truth: localStorage via helpers above)
   const [aiProvider, setAiProvider] = useState(() => getStoredProvider());
   const [aiModalOpen, setAiModalOpen] = useState(false);
+  // Which cost-group is showing: 'local' | 'free' | 'paid'. Opens on the tab the
+  // current choice already lives on, so reopening the panel shows you your own
+  // selection rather than making you hunt for it.
+  const [aiTab, setAiTab] = useState('local');
   const [aboutOpen, setAboutOpen] = useState(false);
   // Verified-connection state. localProbeOk turns true ONLY after the boot
   // health check (or AI Setup re-selection) confirms a local endpoint
@@ -1660,6 +1709,16 @@ function App() {
     });
     return () => ctrls.forEach(c => c.abort());
   }, [localEndpoints]);
+
+  // Open the panel on the tab the current selection lives on. Only on open --
+  // depending on aiProvider too would yank the tab out from under someone who
+  // clicked "Gemini" on the $0 tab, since choosing is what changes aiProvider.
+  useEffect(() => {
+    if (!aiModalOpen) return;
+    if (parseLocalProvider(aiProvider)) { setAiTab('local'); return; }
+    const prov = AI_CLOUD_PROVIDERS.find(p => p.id === aiProvider);
+    if (prov) setAiTab(prov.tier === 'paid' ? 'paid' : 'free');
+  }, [aiModalOpen]);
 
   // Probe well-known local-LLM ports whenever the AI Setup modal opens.
   // Skips any port that's already in the user's saved endpoints. Each probe
@@ -2737,28 +2796,37 @@ function App() {
       <div className={`ai-modal-overlay${aiModalOpen ? ' open' : ''}`} onClick={e => { if (e.target === e.currentTarget) setAiModalOpen(false); }}>
         <div className="ai-modal">
           <h2>AI Setup</h2>
+
+          {/* Tabs by cost to the person, not by vendor. "Selected:" sits in the
+              same row so the current choice is legible from every tab. */}
+          <div className="ai-tabs">
+            <button className={`ai-tab${aiTab === 'local' ? ' on' : ''}`} onClick={() => setAiTab('local')}>Local</button>
+            <button className={`ai-tab${aiTab === 'free'  ? ' on' : ''}`} onClick={() => setAiTab('free')}>$0</button>
+            <button className={`ai-tab${aiTab === 'paid'  ? ' on' : ''}`} onClick={() => setAiTab('paid')}>Pay (Own Key)</button>
+            <span className="ai-selected">
+              Selected: <b>{(() => {
+                const local = parseLocalProvider(aiProvider);
+                if (local) return `${prettyModelLabel(local.model)} · ${local.endpoint.replace(/^https?:\/\//, '')}`;
+                const cloud = AI_CLOUD_PROVIDERS.find(p => p.id === aiProvider);
+                return cloud ? cloud.title : 'none';
+              })()}</b>
+            </span>
+          </div>
+
           <div className="ai-provider-cards">
-            <button
-              className={`ai-provider-card${aiProvider === 'none' ? ' selected' : ''}`}
-              onClick={() => { setStoredProvider('none'); setAiProvider('none'); }}
-            >
-              <div className="ai-card-title">No AI</div>
-              <div className="ai-card-desc">Explore without an AI thinking partner.</div>
-              <div className="ai-card-badge ai-badge-none">Off</div>
-            </button>
-            {AI_CLOUD_PROVIDERS.map(p => (
+            {aiTab !== 'local' && AI_CLOUD_PROVIDERS.filter(p => p.tier === aiTab).map(p => (
               <button
                 key={p.id}
                 className={`ai-provider-card${aiProvider === p.id ? ' selected' : ''}`}
                 onClick={() => { setStoredProvider(p.id); setAiProvider(p.id); }}
               >
-                <div className="ai-card-title">{p.title}</div>
+                <div className="ai-card-title">{p.title}{getStoredKey(p.id) ? ' ✓' : ''}</div>
                 <div className="ai-card-desc">{p.desc}</div>
                 <div className={`ai-card-badge ${p.badgeClass}`}>{p.badge}</div>
               </button>
             ))}
             {/* Local-model cards: one per discovered model per endpoint */}
-            {localEndpoints.flatMap(url => (localModelsByEndpoint[url] || []).map(m => {
+            {aiTab === 'local' && localEndpoints.flatMap(url => (localModelsByEndpoint[url] || []).map(m => {
               const provId = `local:${url}:${m.id}`;
               return (
                 <button
@@ -2774,7 +2842,7 @@ function App() {
             }))}
             {/* Detected local servers: well-known ports that responded to a probe.
                 One click saves the endpoint AND selects its first model. */}
-            {suggestedLocalServers.map(sug => {
+            {aiTab === 'local' && suggestedLocalServers.map(sug => {
               const firstModel = sug.models[0];
               const provId = `local:${sug.url}:${firstModel.id}`;
               return (
@@ -2803,25 +2871,45 @@ function App() {
             })}
 
             {/* Single "+ Add local server" tile in the grid */}
-            <button
-              className="ai-provider-card"
-              onClick={() => setShowAddEndpoint(true)}
-              style={{ borderStyle: 'dashed' }}
-            >
-              <div className="ai-card-title">+ Add local server</div>
-              <div className="ai-card-desc">Connect to an OpenAI-compatible LLM on your machine or network.</div>
-            </button>
+            {aiTab === 'local' && (
+              <button
+                className="ai-provider-card"
+                onClick={() => setShowAddEndpoint(true)}
+                style={{ borderStyle: 'dashed' }}
+              >
+                <div className="ai-card-title">+ Add local server</div>
+                <div className="ai-card-desc">Connect to an OpenAI-compatible LLM on your machine or network.</div>
+              </button>
+            )}
           </div>
+
+          {/* Say which ports were tried. A student whose server is on a port we
+              do not probe otherwise reads an empty tab as "this app cannot do
+              local models" rather than "add it by hand". */}
+          {aiTab === 'local' && (
+            <p className="ai-foot">
+              Auto-checked ports {WELL_KNOWN_LOCAL_PORTS.map(p => p.url.replace(/^.*:/, '')).join(', ')} on
+              this device and on the computer that served this page.
+            </p>
+          )}
 
           {/* Key entry: shown when a cloud provider is selected. Field always starts
               empty — we never display the previously-saved key (not even as masked
               bullets). If a key is already saved, the user can either close the
               modal (existing key keeps working) or type a new one to replace it. */}
-          {AI_CLOUD_PROVIDERS.find(p => p.id === aiProvider) && (() => {
+          {/* Only on the selected provider's own tab — otherwise switching to $0
+              while Anthropic is selected leaves an Anthropic key field sitting
+              under the Gemini and Groq cards. */}
+          {(() => {
             const prov = AI_CLOUD_PROVIDERS.find(p => p.id === aiProvider);
+            if (!prov || prov.tier !== aiTab) return null;
             const hasStored = !!getStoredKey(prov.id);
             return (
               <div className="ai-key-section">
+                <label className="ai-key-label">
+                  API key for {prov.title}
+                  <a href={prov.keyUrl} target="_blank" rel="noopener">Get a key ↗</a>
+                </label>
                 <input
                   type="password"
                   placeholder={hasStored ? `Key saved · type to replace · ${prov.placeholder}` : prov.placeholder}
@@ -2868,6 +2956,18 @@ function App() {
               </div>
             </div>
           )}
+
+          {/* Turning the AI off is a quiet footer, not a card. As a card it
+              competed with the models for attention on every tab; as a footer it
+              is still one click and still always reachable. */}
+          <div>
+            <button
+              className={`ai-disable${aiProvider === 'none' ? ' on' : ''}`}
+              onClick={() => { setStoredProvider('none'); setAiProvider('none'); }}
+            >
+              {aiProvider === 'none' ? '✓ AI disabled' : 'Disable AI'}
+            </button>
+          </div>
 
           <div className="ai-modal-actions">
             <button className="am-save" onClick={() => setAiModalOpen(false)}>Done</button>
