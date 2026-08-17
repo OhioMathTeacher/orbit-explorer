@@ -211,23 +211,40 @@ const AI_STORAGE = {
   endpoints: 'orbit.ai.localEndpoints',
 };
 
+// Model ids live here, beside the provider, not buried in the fetch call that
+// uses them. Providers retire models on their own schedule and the only warning
+// is a 404 in a student's browser -- keeping the id next to the key URL and the
+// title means one place to look and one place to change.
+//
+// All three cloud models were dead when this was written, which is the argument
+// for eventually not pinning them by hand at all -- each of these providers
+// serves a model list to the student's own key, and the local-endpoint probe
+// below already does exactly this against /v1/models:
+//   gemini-2.0-flash             retired
+//   claude-sonnet-4-20250514     retired 15 June 2026
+//   llama-3.3-70b-versatile      shut down 16 August 2026
+// A classroom hits all three as "the AI is broken", which is not what happened
+// and not something a student can diagnose.
 const AI_CLOUD_PROVIDERS = [
   {
     id: 'anthropic', title: 'Anthropic Claude',
+    model: 'claude-sonnet-5',
     desc: 'Your own key. Claude Sonnet — powerful and precise.',
     badge: 'Own Key', badgeClass: 'ai-badge-paid',
     keyUrl: 'https://console.anthropic.com/settings/keys', placeholder: 'sk-ant-…',
     keyHint: 'Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>. Stored only in your browser.',
   },
   {
-    id: 'gemini', title: 'Gemini 2.0 Flash',
+    id: 'gemini', title: 'Gemini 2.5 Flash',
+    model: 'gemini-2.5-flash',
     desc: 'Free tier via Google. Use a personal Gmail account.',
     badge: 'Free', badgeClass: 'ai-badge-free',
     keyUrl: 'https://aistudio.google.com/apikey', placeholder: 'AIza…',
     keyHint: 'Visit <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com</a> for a free key — <strong style="color:#d4a843">use a personal Gmail, not a school account</strong>. Stored in your browser only.',
   },
   {
-    id: 'groq', title: 'Groq (Llama 3.3)',
+    id: 'groq', title: 'Groq (GPT-OSS 120B)',
+    model: 'openai/gpt-oss-120b',
     desc: 'Free tier. Any email — no Google account needed.',
     badge: 'Free', badgeClass: 'ai-badge-free',
     keyUrl: 'https://console.groq.com/keys', placeholder: 'gsk_…',
@@ -343,6 +360,8 @@ async function askAI(providerId, messages, systemPrompt) {
   const key = getStoredKey(providerId);
   if (!key) throw new Error(`No API key saved for ${providerId}. Open the 🤖 AI menu to enter one.`);
 
+  const cloudModel = AI_CLOUD_PROVIDERS.find(p => p.id === providerId)?.model;
+
   if (providerId === 'anthropic') {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -353,8 +372,13 @@ async function askAI(providerId, messages, systemPrompt) {
         'anthropic-dangerous-direct-browser-access': 'true',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: cloudModel,
         max_tokens: 600,
+        // Thinking is ON by default on Sonnet 5, and max_tokens caps thinking and
+        // reply together. Left alone, a 600-token budget could be spent thinking
+        // and return a truncated reply -- or none. This tutor wants short, fast
+        // answers and has no reasoning to show, so it is turned off explicitly.
+        thinking: { type: 'disabled' },
         system: systemPrompt,
         messages: messages.map(m => ({ role: m.role, content: m.content })),
       }),
@@ -362,6 +386,7 @@ async function askAI(providerId, messages, systemPrompt) {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       if (res.status === 401) throw new Error('Invalid Anthropic key. Update it via 🤖 AI.');
+      if (res.status === 404) throw new Error(`Anthropic model ${cloudModel} is unavailable — it may have been retired. This needs a fix in the app, not a new key.`);
       throw new Error(`Anthropic ${res.status}: ${err?.error?.message || 'error'}`);
     }
     const data = await res.json();
@@ -369,7 +394,7 @@ async function askAI(providerId, messages, systemPrompt) {
   }
 
   if (providerId === 'gemini') {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${cloudModel}:generateContent?key=${encodeURIComponent(key)}`;
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -384,7 +409,12 @@ async function askAI(providerId, messages, systemPrompt) {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      if (res.status === 400 || res.status === 403) throw new Error('Invalid Gemini key. Update it via 🤖 AI.');
+      // 400 was reported as "Invalid Gemini key", which is the wrong advice when
+      // the key is fine and the model id has been retired -- a student then
+      // regenerates a working key over and over. Only 401/403 are key problems;
+      // everything else reports what Google actually said.
+      if (res.status === 401 || res.status === 403) throw new Error('Invalid Gemini key. Update it via 🤖 AI.');
+      if (res.status === 404) throw new Error(`Gemini model ${cloudModel} is unavailable — it may have been retired. This needs a fix in the app, not a new key.`);
       throw new Error(`Gemini ${res.status}: ${err?.error?.message || 'error'}`);
     }
     const data = await res.json();
@@ -396,7 +426,7 @@ async function askAI(providerId, messages, systemPrompt) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: cloudModel,
         messages: [{ role: 'system', content: systemPrompt }, ...messages],
         max_tokens: 600,
       }),
@@ -404,6 +434,7 @@ async function askAI(providerId, messages, systemPrompt) {
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       if (res.status === 401) throw new Error('Invalid Groq key. Update it via 🤖 AI.');
+      if (res.status === 404) throw new Error(`Groq model ${cloudModel} is unavailable — it may have been retired. This needs a fix in the app, not a new key.`);
       throw new Error(`Groq ${res.status}: ${body.slice(0, 200)}`);
     }
     const data = await res.json();
