@@ -205,6 +205,16 @@ const CHAT_PANEL_MAX_WIDTH = 720;
 // Nothing about server URLs is hardcoded; users configure via the modal.
 // ═══════════════════════════════════
 
+// Shown in the About panel. "v2" was the March 2026 release; 2.1 marks the
+// August 2026 work (three retired cloud models repointed, honest error text).
+// One constant, so the number on screen and the number you would cite agree.
+const APP_VERSION = '2.1';
+// The canonical repo. The title used to link to orbit-explorer-classroom, which
+// was promoted into this one on 13 May 2026 and is now private and superseded --
+// so clicking the app name landed on a stale README describing this repo as
+// frozen.
+const APP_REPO_URL = 'https://github.com/OhioMathTeacher/orbit-explorer';
+
 const AI_STORAGE = {
   provider: 'orbit.ai.provider',
   key: (id) => `orbit.ai.key.${id}`,
@@ -455,7 +465,7 @@ const TRANSLATIONS = {
   en: {
     appName: 'Orbit Explorer v2',
     language: 'Language',
-    singleStartValue: 'Type a value, press Enter',
+    singleStartValue: 'Enter a value',
     nEven: '(n even)',
     nOdd: '(n odd)',
     add: 'Show steps',
@@ -487,7 +497,13 @@ const TRANSLATIONS = {
     colorPrimesLabel: 'Color primes',
     colorPrimesHelp: 'Gives prime numbers (2, 3, 5, 7, 11, …) their own color so they stand out from the rest.',
     view: 'View',
-    aboutAppHelp: 'Click to see info about this app on GitHub. (Use your browser\'s Back button to return here.)',
+    aboutAppHelp: 'About this app',
+    aboutTitle: 'About Orbit Explorer',
+    aboutVersion: 'Version',
+    aboutBlurb: 'An interactive tool for exploring parameterized sequence rules — pick m, b and d, feed in a starting value, and watch where the sequence goes. Built for use in front of a class and for students exploring on their own.',
+    aboutAiNote: 'The AI thinking partner is optional and uses a key you supply yourself through AI Setup. No key is built into this page.',
+    aboutRepo: 'Source code on GitHub',
+    aboutClose: 'Close',
     stepNumbersLabel: 'Show step numbers',
     stepNumbersHelp: 'Labels each circle with its place in the sequence: 0 is your starting value, 1 is the next number, 2 is the one after that, and so on.',
     parityLabel: 'Parity coloring',
@@ -574,7 +590,7 @@ const TRANSLATIONS = {
   es: {
     appName: 'Orbit Explorer',
     language: 'Idioma',
-    singleStartValue: 'Escribe un valor, pulsa Enter',
+    singleStartValue: 'Escribe un valor',
     nEven: '(n par)',
     nOdd: '(n impar)',
     add: 'Mostrar pasos',
@@ -606,7 +622,13 @@ const TRANSLATIONS = {
     colorPrimesLabel: 'Color para primos',
     colorPrimesHelp: 'Da a los números primos (2, 3, 5, 7, 11, …) su propio color para que destaquen del resto.',
     view: 'Vista',
-    aboutAppHelp: 'Haz clic para ver información sobre la app en GitHub. (Usa el botón Atrás del navegador para volver aquí.)',
+    aboutAppHelp: 'Acerca de esta app',
+    aboutTitle: 'Acerca de Orbit Explorer',
+    aboutVersion: 'Version',
+    aboutBlurb: 'Una herramienta interactiva para explorar reglas de sucesiones parametrizadas: elige m, b y d, introduce un valor inicial y observa a donde va la sucesion. Pensada para usarse ante la clase y para que el alumnado explore por su cuenta.',
+    aboutAiNote: 'El companero de pensamiento con IA es opcional y usa una clave que tu mismo proporcionas en Configuracion de IA. Esta pagina no lleva ninguna clave incorporada.',
+    aboutRepo: 'Codigo fuente en GitHub',
+    aboutClose: 'Cerrar',
     stepNumbersLabel: 'Mostrar números de paso',
     stepNumbersHelp: 'Etiqueta cada círculo con su lugar en la secuencia: 0 es tu valor inicial, 1 es el siguiente número, 2 es el de después, y así sucesivamente.',
     parityLabel: 'Color por paridad',
@@ -693,7 +715,7 @@ const TRANSLATIONS = {
   'zh-Hans': {
     appName: 'Orbit Explorer',
     language: '语言',
-    singleStartValue: '输入一个值，按 Enter 键',
+    singleStartValue: '输入一个值',
     nEven: '(偶数)',
     nOdd: '(奇数)',
     add: '显示步骤',
@@ -725,7 +747,13 @@ const TRANSLATIONS = {
     colorPrimesLabel: '为质数着色',
     colorPrimesHelp: '给质数（2、3、5、7、11……）一个专属颜色，让它们从其他数字中突显出来。',
     view: '视图',
-    aboutAppHelp: '点击在 GitHub 上查看关于此应用的信息。（用浏览器的“后退”按钮返回这里。）',
+    aboutAppHelp: '关于此应用',
+    aboutTitle: '关于 Orbit Explorer',
+    aboutVersion: '版本',
+    aboutBlurb: '一个交互式工具，用于探索带参数的数列规则：选择 m、b、d，输入起始值，观察数列的走向。既适合在课堂上演示，也适合学生自己探索。',
+    aboutAiNote: 'AI 思考伙伴是可选的，使用你在"AI 设置"中自行提供的密钥。本页面不含任何内置密钥。',
+    aboutRepo: '在 GitHub 上查看源代码',
+    aboutClose: '关闭',
     stepNumbersLabel: '显示步数编号',
     stepNumbersHelp: '为每个圆圈标注它在序列中的位置：0 是你的起始值，1 是下一个数字，2 是再下一个，依此类推。',
     parityLabel: '按奇偶着色',
@@ -1475,6 +1503,7 @@ function App() {
   // ── AI provider + key state (single source of truth: localStorage via helpers above)
   const [aiProvider, setAiProvider] = useState(() => getStoredProvider());
   const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   // Verified-connection state. localProbeOk turns true ONLY after the boot
   // health check (or AI Setup re-selection) confirms a local endpoint
   // actually responds. Cloud providers are considered "connected" if a key
@@ -2508,12 +2537,21 @@ function App() {
         display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 18,
         borderBottom: `1px solid ${uiTheme.border}`, flexShrink: 0, minHeight: 60,
       }}>
-        <a
-          href="https://github.com/OhioMathTeacher/orbit-explorer-classroom#readme"
+        {/* The app name opens an About panel rather than navigating to GitHub.
+            Leaving the page to find out what the app is made the browser's Back
+            button the way home -- and the link pointed at orbit-explorer-classroom,
+            a private repo superseded in May, whose README still describes this one
+            as frozen. */}
+        <button
+          onClick={() => setAboutOpen(true)}
           title={t('aboutAppHelp')}
-          style={{ color: uiTheme.titleText, fontWeight: 'bold', fontSize: 19, whiteSpace: 'nowrap', textDecoration: 'none', cursor: 'pointer' }}>
+          style={{
+            background: 'none', border: 'none', padding: 0, font: 'inherit',
+            color: uiTheme.titleText, fontWeight: 'bold', fontSize: 19,
+            whiteSpace: 'nowrap', cursor: 'pointer',
+          }}>
           {t('appName')}
-        </a>
+        </button>
 
         {/* Parameter sliders — the primary controls */}
         <div style={{ display: 'flex', gap: 22, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2543,7 +2581,7 @@ function App() {
               onChange={handleInputChange}
               onKeyDown={e => e.key === 'Enter' && addNumber()}
               style={{
-                width: 280, background: '#1a2d50', border: '1px solid #3355aa',
+                width: 180, background: '#1a2d50', border: '1px solid #3355aa',
                 color: 'white', padding: '7px 11px', borderRadius: 5, fontSize: 15,
               }}
             />
@@ -2676,6 +2714,26 @@ function App() {
       </div>
 
       {/* ── AI Setup Modal ── */}
+      {/* ── About panel ── */}
+      <div className={`ai-modal-overlay${aboutOpen ? ' open' : ''}`}
+           onClick={e => { if (e.target === e.currentTarget) setAboutOpen(false); }}>
+        <div className="ai-modal" style={{ width: 480 }}>
+          <h2 style={{ marginTop: 0 }}>{t('aboutTitle')}</h2>
+          <p style={{ color: '#8a96a8', marginTop: '-0.4rem', fontSize: '0.85rem' }}>
+            {t('aboutVersion')} {APP_VERSION}
+          </p>
+          <p>{t('aboutBlurb')}</p>
+          <p style={{ fontSize: '0.85rem', color: '#8a96a8' }}>{t('aboutAiNote')}</p>
+          <p>
+            <a href={APP_REPO_URL} target="_blank" rel="noopener"
+               style={{ color: '#7fb3ff' }}>{t('aboutRepo')}</a>
+          </p>
+          <div className="ai-modal-actions">
+            <button onClick={() => setAboutOpen(false)}>{t('aboutClose')}</button>
+          </div>
+        </div>
+      </div>
+
       <div className={`ai-modal-overlay${aiModalOpen ? ' open' : ''}`} onClick={e => { if (e.target === e.currentTarget) setAiModalOpen(false); }}>
         <div className="ai-modal">
           <h2>AI Setup</h2>
@@ -3180,6 +3238,22 @@ function App() {
                 return '🪢 AI Chat';
               })()}
             </div>
+            {/* Save. downloadChatTranscript() and the downloadChat label in all
+                three languages already existed -- nothing ever called them, so
+                the feature was complete except for the button. It appears once
+                there is a conversation to save, next to Clear, because a student
+                who can clear their work should be able to keep it first. */}
+            {chatMessages.length > 0 && (
+              <button
+                onClick={downloadChatTranscript}
+                style={{
+                  background: 'transparent', border: `1px solid ${uiTheme.border}`,
+                  color: uiTheme.textSecondary, borderRadius: 4, padding: '3px 8px',
+                  fontSize: 10, cursor: 'pointer', marginRight: 6,
+                }}
+                title="Download this conversation as a text file"
+              >💾 {t('downloadChat')}</button>
+            )}
             <button
               onClick={() => {
                 if (chatMessages.length > 1 && !confirm('Clear the chat?')) return;
