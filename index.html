@@ -176,6 +176,13 @@
       font-size: 0.82rem; outline: none; margin-bottom: 0.3rem;
     }
     .ai-key-section input:focus { border-color: rgba(120,180,240,0.6); }
+    .ai-preset-row { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.5rem; }
+    .ai-preset {
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(120,180,240,0.25);
+      border-radius: 999px; color: #cfe0f5; font: inherit; font-size: 0.72rem;
+      font-weight: 600; padding: 0.3rem 0.7rem; cursor: pointer;
+    }
+    .ai-preset:hover { border-color: rgba(120,180,240,0.6); color: #e8f0ff; }
     .ai-key-hint { font-size: 0.7rem; color: #6a7686; line-height: 1.45; }
     .ai-key-hint a { color: #8fb8e8; text-decoration: none; }
     .ai-key-hint a:hover { text-decoration: underline; }
@@ -262,7 +269,21 @@ const AI_STORAGE = {
   provider: 'orbit.ai.provider',
   key: (id) => `orbit.ai.key.${id}`,
   endpoints: 'orbit.ai.localEndpoints',
+  customEndpoint: 'orbit.ai.custom.endpoint',
+  customModel: 'orbit.ai.custom.model',
 };
+
+// One card covers every OpenAI-compatible service rather than one card each.
+// The presets fill the two fields; anything not listed still works by typing a
+// base URL and a model, so a new provider needs no code change here.
+// Model ids rot -- Groq's llama-3.3-70b-versatile stopped being served on
+// 16 August 2026 -- so treat these as starting points, not guarantees.
+const OPENAI_COMPAT_PRESETS = [
+  { id: 'openai',     label: 'ChatGPT',    endpoint: 'https://api.openai.com/v1',      model: 'gpt-4o-mini' },
+  { id: 'deepseek',   label: 'DeepSeek',   endpoint: 'https://api.deepseek.com/v1',    model: 'deepseek-chat' },
+  { id: 'openrouter', label: 'OpenRouter', endpoint: 'https://openrouter.ai/api/v1',   model: 'meta-llama/llama-3.3-70b-instruct' },
+  { id: 'groq',       label: 'Groq',       endpoint: 'https://api.groq.com/openai/v1', model: 'openai/gpt-oss-120b' },
+];
 
 // Model ids live here, beside the provider, not buried in the fetch call that
 // uses them. Providers retire models on their own schedule and the only warning
@@ -323,6 +344,25 @@ function setStoredKey(provId, key)  {
   if (key) localStorage.setItem(AI_STORAGE.key(provId), key);
   else     localStorage.removeItem(AI_STORAGE.key(provId));
 }
+function getStoredCustom() {
+  return {
+    endpoint: (localStorage.getItem(AI_STORAGE.customEndpoint) || '').replace(/\/$/, ''),
+    model:    localStorage.getItem(AI_STORAGE.customModel) || '',
+  };
+}
+function setStoredCustom(field, value) {
+  const k = field === 'endpoint' ? AI_STORAGE.customEndpoint : AI_STORAGE.customModel;
+  if (value) localStorage.setItem(k, value); else localStorage.removeItem(k);
+}
+// Display name for the custom endpoint: the model if one is set, else the card name.
+function customLabel() {
+  const c = getStoredCustom();
+  if (!c.model) return 'OpenAI-compatible';
+  // Routed ids carry a vendor prefix ('meta-llama/llama-3.3-70b-instruct').
+  // The prefix is routing, not the model's name, so drop it before labelling.
+  return prettyModelLabel(c.model.split('/').pop());
+}
+
 function getStoredLocalEndpoints() {
   try { return JSON.parse(localStorage.getItem(AI_STORAGE.endpoints) || '[]'); }
   catch { return []; }
@@ -499,6 +539,41 @@ async function askAI(providerId, messages, systemPrompt) {
       if (res.status === 401) throw new Error('Invalid Groq key. Update it via 🤖 AI.');
       if (res.status === 404) throw new Error(`Groq model ${cloudModel} is unavailable — it may have been retired. This needs a fix in the app, not a new key.`);
       throw new Error(`Groq ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    return data?.choices?.[0]?.message?.content || '';
+  }
+
+  // Any OpenAI-compatible endpoint the user configured: ChatGPT, DeepSeek,
+  // OpenRouter, or anything else that speaks /v1/chat/completions.
+  if (providerId === 'custom') {
+    const { endpoint, model } = getStoredCustom();
+    if (!endpoint || !model) {
+      throw new Error('The OpenAI-compatible endpoint needs a base URL and a model. Open the 🤖 AI menu.');
+    }
+    // Newer OpenAI models reject max_tokens and want max_completion_tokens.
+    // Older ones, and most compatible services, only know max_tokens. Rather
+    // than pin one and be wrong for half the presets, send the common spelling
+    // and retry once when the server says that is the problem.
+    const post = (cap) => fetch(`${endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'system', content: systemPrompt }, ...messages],
+        [cap]: 600,
+      }),
+    });
+    let res = await post('max_tokens');
+    if (res.status === 400) {
+      const body = await res.clone().text().catch(() => '');
+      if (/max_completion_tokens/.test(body)) res = await post('max_completion_tokens');
+    }
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      if (res.status === 401) throw new Error('Invalid key for the OpenAI-compatible endpoint. Update it via 🤖 AI.');
+      if (res.status === 404) throw new Error(`Model ${model} was not found at ${endpoint}. Check the model id via 🤖 AI.`);
+      throw new Error(`${endpoint} ${res.status}: ${body.slice(0, 200)}`);
     }
     const data = await res.json();
     return data?.choices?.[0]?.message?.content || '';
@@ -1580,6 +1655,10 @@ function App() {
   const aiConnected = (() => {
     if (!aiProvider || aiProvider === 'none') return false;
     if (parseLocalProvider(aiProvider)) return localProbeOk;
+    if (aiProvider === 'custom') {
+      const c = getStoredCustom();
+      return !!(getStoredKey('custom') && c.endpoint && c.model);
+    }
     // Cloud provider — "connected" if a key is saved (we don't pre-probe;
     // a bad key surfaces as an error when the user sends a message).
     return !!getStoredKey(aiProvider);
@@ -1595,6 +1674,8 @@ function App() {
   });
   const [localModelsByEndpoint, setLocalModelsByEndpoint] = useState({});  // { url: [{id, label}] }
   const [showAddEndpoint, setShowAddEndpoint] = useState(false);
+  const [customEndpoint, setCustomEndpoint] = useState(() => getStoredCustom().endpoint);
+  const [customModel, setCustomModel] = useState(() => getStoredCustom().model);
   const [inputVal, setInputVal] = useState('');
   // Suggestions discovered by probing well-known LLM ports when the modal opens.
   // Shape: [{ url, hint, models: [{id, label}] }]. Cleared on modal close.
@@ -1730,6 +1811,7 @@ function App() {
   useEffect(() => {
     if (!aiModalOpen) return;
     if (parseLocalProvider(aiProvider)) { setAiTab('local'); return; }
+    if (aiProvider === 'custom') { setAiTab('paid'); return; }
     const prov = AI_CLOUD_PROVIDERS.find(p => p.id === aiProvider);
     if (prov) setAiTab(prov.tier === 'paid' ? 'paid' : 'free');
   }, [aiModalOpen]);
@@ -2846,6 +2928,10 @@ function App() {
               Selected: <b>{(() => {
                 const local = parseLocalProvider(aiProvider);
                 if (local) return `${prettyModelLabel(local.model)} · ${local.endpoint.replace(/^https?:\/\//, '')}`;
+                if (aiProvider === 'custom') {
+                  const c = getStoredCustom();
+                  return c.endpoint ? `${customLabel()} · ${c.endpoint.replace(/^https?:\/\//, '')}` : 'OpenAI-compatible';
+                }
                 const cloud = AI_CLOUD_PROVIDERS.find(p => p.id === aiProvider);
                 return cloud ? cloud.title : 'none';
               })()}</b>
@@ -2864,6 +2950,20 @@ function App() {
                 <div className={`ai-card-badge ${p.badgeClass}`}>{p.badge}</div>
               </button>
             ))}
+            {/* One card for every OpenAI-compatible service. It sits on the paid
+                tab because the endpoints you point it at bill your own account,
+                which is what the tabs sort on. */}
+            {aiTab === 'paid' && (
+              <button
+                className={`ai-provider-card${aiProvider === 'custom' ? ' selected' : ''}`}
+                onClick={() => { setStoredProvider('custom'); setAiProvider('custom'); }}
+              >
+                <div className="ai-card-title">OpenAI-compatible{getStoredKey('custom') ? ' ✓' : ''}</div>
+                <div className="ai-card-desc">ChatGPT · DeepSeek · OpenRouter — any endpoint + key + model.</div>
+                <div className="ai-card-badge ai-badge-paid">Own Key</div>
+              </button>
+            )}
+
             {/* Local-model cards: one per discovered model per endpoint */}
             {aiTab === 'local' && localEndpoints.flatMap(url => (localModelsByEndpoint[url] || []).map(m => {
               const provId = `local:${url}:${m.id}`;
@@ -2973,6 +3073,54 @@ function App() {
               </div>
             );
           })()}
+
+          {/* Endpoint + model + key for the OpenAI-compatible card. The presets
+              fill the first two fields; a service that is not listed still works
+              by typing them. */}
+          {aiProvider === 'custom' && aiTab === 'paid' && (
+            <div className="ai-key-section">
+              <label className="ai-key-label">Endpoint, model, and key</label>
+              <div className="ai-preset-row">
+                {OPENAI_COMPAT_PRESETS.map(preset => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className="ai-preset"
+                    onClick={() => {
+                      setCustomEndpoint(preset.endpoint); setStoredCustom('endpoint', preset.endpoint);
+                      setCustomModel(preset.model);       setStoredCustom('model', preset.model);
+                    }}
+                  >{preset.label}</button>
+                ))}
+              </div>
+              <input
+                type="text" value={customEndpoint} spellCheck={false}
+                placeholder="Base URL, e.g. https://api.openai.com/v1"
+                onChange={e => { setCustomEndpoint(e.target.value); setStoredCustom('endpoint', e.target.value.trim().replace(/\/$/, '')); }}
+              />
+              <input
+                type="text" value={customModel} spellCheck={false}
+                placeholder="Model, e.g. gpt-4o-mini"
+                onChange={e => { setCustomModel(e.target.value); setStoredCustom('model', e.target.value.trim()); }}
+              />
+              <input
+                type="password"
+                placeholder={getStoredKey('custom') ? 'Key saved · type to replace' : 'API key…'}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    const v = e.target.value.trim();
+                    if (v) setStoredKey('custom', v);
+                    e.target.value = ''; setAiModalOpen(false);
+                  } else if (e.key === 'Escape') { e.target.value = ''; setAiModalOpen(false); }
+                }}
+                onBlur={e => { const v = e.target.value.trim(); if (v) setStoredKey('custom', v); e.target.value = ''; }}
+              />
+              <div className="ai-key-hint">
+                Stored only in your browser — sent to the endpoint above and nowhere else.
+                Model ids change; if one stops working, pick another from the provider's list.
+              </div>
+            </div>
+          )}
 
           {/* Add-local-server form — only visible when the user clicks the "+ Add local server" tile */}
           {showAddEndpoint && (
@@ -3386,6 +3534,7 @@ function App() {
               {(() => {
                 const local = parseLocalProvider(aiProvider);
                 if (local) return `🪢 ${prettyModelLabel(local.model)}`;
+                if (aiProvider === 'custom') return `🪢 ${customLabel()}`;
                 const cloud = AI_CLOUD_PROVIDERS.find(p => p.id === aiProvider);
                 if (cloud) return `🪢 ${cloud.title}`;
                 return '🪢 AI Chat';
@@ -3467,6 +3616,7 @@ function App() {
                 {(() => {
                   const local = parseLocalProvider(aiProvider);
                   if (local) return t('modelThinking').replace('{model}', shortModelLabel(local.model));
+                  if (aiProvider === 'custom') return t('modelThinking').replace('{model}', customLabel().split(' · ')[0]);
                   const cloud = AI_CLOUD_PROVIDERS.find(p => p.id === aiProvider);
                   if (cloud) return t('modelThinking').replace('{model}', cloud.title);
                   return t('modelThinking').replace('{model}', 'AI');
@@ -3485,6 +3635,7 @@ function App() {
               placeholder={(() => {
                 const local = parseLocalProvider(aiProvider);
                 if (local) return t('askModel').replace('{model}', shortModelLabel(local.model));
+                if (aiProvider === 'custom') return t('askModel').replace('{model}', customLabel().split(' · ')[0]);
                 const cloud = AI_CLOUD_PROVIDERS.find(p => p.id === aiProvider);
                 if (cloud) return t('askModel').replace('{model}', cloud.title);
                 return t('askNoModel');
