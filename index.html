@@ -2218,14 +2218,31 @@ function App() {
       const w = cvs.offsetWidth, h = cvs.offsetHeight;
       if (cvs.width !== w || cvs.height !== h) { cvs.width = w; cvs.height = h; }
     }
+    // The graph is positioned in canvas pixels, so anything that changes the
+    // canvas box leaves it off-centre — sliding the AI drawer, hiding the
+    // reference grids, resizing the window. Rather than time a re-fit against
+    // the drawer's 220ms slide and hope, re-fit off the size change itself,
+    // debounced so it lands once the box has actually stopped moving. The
+    // first call is startup, which has its own auto-fit, so it is skipped.
+    let fitTimer = null, startup = true;
+    function onResize() {
+      resize();
+      if (startup) { startup = false; return; }
+      clearTimeout(fitTimer);
+      fitTimer = setTimeout(fitToCanvas, 90);
+    }
     resize();
     let ro = null;
     if (typeof ResizeObserver !== 'undefined' && canvasRef.current) {
-      ro = new ResizeObserver(resize);
+      ro = new ResizeObserver(onResize);
       ro.observe(canvasRef.current);
     }
-    window.addEventListener('resize', resize);
-    return () => { window.removeEventListener('resize', resize); if (ro) ro.disconnect(); };
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      clearTimeout(fitTimer);
+      if (ro) ro.disconnect();
+    };
   }, []);
 
   // Wheel / pinch → zoom (anchored on the graph center, so it just scales in place).
@@ -2549,13 +2566,6 @@ function App() {
   // The wait clears the drawer's 220ms slide, so the canvas has stopped
   // changing size before we measure it. Skipped on first render, so a fresh
   // load keeps its own startup auto-fit.
-  const panelFirstPass = useRef(true);
-  useEffect(() => {
-    if (panelFirstPass.current) { panelFirstPass.current = false; return; }
-    const id = setTimeout(fitToCanvas, 300);
-    return () => clearTimeout(id);
-  }, [showDataGrids, aiOpen]);
-
   function handleCanvasPointerDown(event) {
     const point = getCanvasPoint(event);
     if (!point) return;
