@@ -2455,6 +2455,18 @@ function App() {
     }, delay);
   }
 
+  // Opening or closing either panel resizes the canvas, which shifts the graph
+  // unpredictably — sometimes clean off the edge. Re-fit on all four moves.
+  // The wait clears the drawer's 220ms slide, so the canvas has stopped
+  // changing size before we measure it. Skipped on first render, so a fresh
+  // load keeps its own startup auto-fit.
+  const panelFirstPass = useRef(true);
+  useEffect(() => {
+    if (panelFirstPass.current) { panelFirstPass.current = false; return; }
+    const id = setTimeout(fitToCanvas, 300);
+    return () => clearTimeout(id);
+  }, [showDataGrids, aiOpen]);
+
   function handleCanvasPointerDown(event) {
     const point = getCanvasPoint(event);
     if (!point) return;
