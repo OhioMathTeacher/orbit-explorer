@@ -1643,8 +1643,8 @@ function App() {
   const [findVal, setFindVal] = useState('');          // Revision 7: data-grid "Find" input
   const [highlightCell, setHighlightCell] = useState(null); // value to ring in the grid (null = none)
   const [isDraggingNode, setIsDraggingNode] = useState(false);
-  const [showDataGrids, setShowDataGrids] = useState(true);  // the Grid box now hides the Data Reference Grids
-  const [aiOpen, setAiOpen] = useState(true);                // AI chat drawer, open by default
+  const [showDataGrids, setShowDataGrids] = useState(false); // the Grid box now hides the Data Reference Grids
+  const [aiOpen, setAiOpen] = useState(false);               // AI chat drawer, shut until AI Setup is opened
   const [layoutMode, setLayoutMode] = useState('spread');
   const [colorPrimes, setColorPrimes] = useState(false);
   const [useLightTheme, setUseLightTheme] = useState(false);
@@ -2056,11 +2056,18 @@ function App() {
     inputEl.value = '';
   }
 
+  // Opening AI Setup also slides the chat drawer out. Choosing a model and
+  // then hunting for the panel it feeds would be a needless second step.
+  function openAiSetup() {
+    setAiOpen(true);
+    setAiModalOpen(true);
+  }
+
   async function sendChat() {
     const text = chatInput.trim();
     if (!text || chatLoading) return;
     if (!aiProvider || aiProvider === 'none') {
-      setAiModalOpen(true);
+      openAiSetup();
       return;
     }
     const userMsg = { role: 'user', content: text };
@@ -2794,7 +2801,7 @@ function App() {
         {/* ── AI Setup button (far right) ── */}
         <button
           type="button"
-          onClick={() => setAiModalOpen(true)}
+          onClick={openAiSetup}
           className={`ai-btn${aiConnected ? ' ai-active' : ' ai-disconnected'}`}
           style={{ marginLeft: 'auto' }}
           title="Choose AI model / enter API key"
