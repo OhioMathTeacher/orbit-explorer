@@ -2539,8 +2539,8 @@ function App() {
 
   function reset() {
     clearGraph();
-    // Keep log (Recent Results) and savedCases for research data;
-    // the Reset button additionally clears the grid highlights.
+    // Keep log (Recent Results) and savedCases for research data; the grid highlights
+    // go, because they track whatever trajectory is currently drawn and there is none.
     setVisitedNums(new Set());
   }
 
@@ -2874,8 +2874,12 @@ function App() {
     setLog(prev =>
       [{ start: val, outcome, steps: seq.length - 1, maxValue, m, a, d }, ...prev].slice(0, 20)
     );
-    setVisitedNums(prev => {
-      const next = new Set(prev);
+    // Built fresh, not extended. A new seed replaces the trajectory on the canvas
+    // (Revision 4), so it has to replace the grid highlights too — otherwise exploring
+    // 1111 and then clicking 1 leaves 1111's whole chain lit up beside 1's, and the
+    // grid is showing a trajectory that is no longer on screen.
+    setVisitedNums(() => {
+      const next = new Set();
       for (const v of seq) {
         if (Number.isSafeInteger(v) && v >= 1 && v <= MAX_VAL) next.add(v);
       }
