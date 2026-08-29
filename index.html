@@ -9,7 +9,11 @@
   <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
-      var BUILD = '1774216101-r6';
+      var BUILD = '1788047158-r7';
+      // Published so the version stamp in the canvas corner can show it. The
+      // cache-buster is already the one string that changes on every deploy, so
+      // reusing it means the stamp cannot drift out of step with what was shipped.
+      window.APP_BUILD = BUILD;
       var params = new URLSearchParams(window.location.search);
       if (params.get('fr') !== BUILD || !params.has('cb')) {
         params.set('fr', BUILD);
@@ -255,10 +259,12 @@ const CHAT_PANEL_MAX_WIDTH = 720;
 // Nothing about server URLs is hardcoded; users configure via the modal.
 // ═══════════════════════════════════
 
-// Shown in the About panel. "v2" was the March 2026 release; 2.1 marks the
-// August 2026 work (three retired cloud models repointed, honest error text).
-// One constant, so the number on screen and the number you would cite agree.
-const APP_VERSION = '2.1';
+// Shown in the About panel and stamped faintly in the canvas corner. "v2" was the
+// March 2026 release; 2.1 marked the August 2026 work (three retired cloud models
+// repointed, honest error text); 2.2 is the session recorder, the seeded layout, and
+// the grid-highlight fix. One constant, so the number on screen and the number you
+// would cite agree.
+const APP_VERSION = '2.2';
 // The canonical repo. The title used to link to orbit-explorer-classroom, which
 // was promoted into this one on 13 May 2026 and is now private and superseded --
 // so clicking the app name landed on a stale README describing this repo as
@@ -1398,7 +1404,9 @@ function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, h
   ctx.textBaseline = 'bottom';
   // Keep clear of the zoom controls in the bottom-left corner: only use the space to their right.
   const leftReserve = 340;
-  const maxFormulaWidth = Math.max(200, W - leftReserve - 20);
+  // …and clear of the version stamp in the bottom-right, which shares this baseline.
+  const rightReserve = 160;
+  const maxFormulaWidth = Math.max(200, W - leftReserve - rightReserve);
   let formulaSize = Math.min(Math.round(W / 42), 22);
   while (formulaSize > 11) {
     ctx.font = `bold ${formulaSize}px monospace`;
@@ -1406,7 +1414,20 @@ function drawGraph(canvas, nodes, edges, cycleNodes, startNodes, now, m, a, d, h
     formulaSize -= 1;
   }
   ctx.font = `bold ${formulaSize}px monospace`;
-  drawCenteredSegments(ctx, (leftReserve + (W - 20)) / 2, H - 12, formula);
+  drawCenteredSegments(ctx, (leftReserve + (W - rightReserve)) / 2, H - 12, formula);
+  ctx.restore();
+
+  // Version stamp, bottom-right. Deliberately faint: it is for us, not for the
+  // student, and it should never compete with the graph. Drawn on the canvas
+  // rather than as an overlay so it follows the canvas when the reference grids
+  // open and close, instead of floating over them.
+  ctx.save();
+  ctx.globalAlpha = 0.28;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'bottom';
+  ctx.font = '11px monospace';
+  ctx.fillStyle = theme.canvasWatermark;
+  ctx.fillText(`v${APP_VERSION}${window.APP_BUILD ? ' · ' + window.APP_BUILD : ''}`, W - 12, H - 12);
   ctx.restore();
 
   // ── Zoom/pan transform — everything below (edges, nodes, cycle layout) is in
