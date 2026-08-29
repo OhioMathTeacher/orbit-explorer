@@ -424,6 +424,17 @@ function shortModelLabel(id) {
 
 // Dispatch a chat request to the selected provider. Returns the assistant's reply text.
 // Throws Error if the provider isn't usable (no provider / no key / network failure / non-2xx).
+/* Which model actually answered. Recorded per reply rather than per session,
+   because a student may switch providers mid-session and the transcript has to say
+   which turn came from which. Mirrors askAI's own dispatch order: a local endpoint
+   carries its model in the provider id, everything else looks up the cloud table. */
+function getModelFor(providerId) {
+  if (!providerId || providerId === 'none') return null;
+  const local = parseLocalProvider(providerId);
+  if (local) return local.model || 'openai-compatible';
+  return AI_CLOUD_PROVIDERS.find(p => p.id === providerId)?.model || null;
+}
+
 async function askAI(providerId, messages, systemPrompt) {
   if (!providerId || providerId === 'none') {
     throw new Error('No AI provider selected. Open the 🤖 AI menu to choose one.');
@@ -1618,6 +1629,128 @@ const OUTCOME_LABEL = {
   timeout:    'timed out',
 };
 
+/* ── Seeded layout randomness ──────────────────────────────────────────────────
+   The force layout used to start every node at Math.random(), which made a session
+   unreplayable: the mathematics would come back identical but the picture never
+   would, so a student scrubbing her own session could not recognize the moment she
+   was looking at. mulberry32 is a small, fast PRNG with a stateful 32-bit seed —
+   good enough for scattering nodes, and reproducible, which is the whole point.
+
+   The seed is stamped once per session and travels in the recording. Restore it
+   before replaying and the layout comes back node for node.
+
+   Nothing else in the app may call Math.random() for anything that affects what is
+   drawn. If you add layout randomness, take it from here. */
+function makeRng(seed) {
+  let s = seed >>> 0;
+  return function rng() {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const Layout = {
+  seed: (Date.now() ^ 0x9E3779B9) >>> 0,
+  rng: null,
+  // Re-seed and restart the stream. Called once at boot, and again by the replay
+  // scrubber so a reconstructed session scatters its nodes exactly as it first did.
+  reseed(seed) {
+    this.seed = seed >>> 0;
+    this.rng = makeRng(this.seed);
+  },
+  random() {
+    if (!this.rng) this.rng = makeRng(this.seed);
+    return this.rng();
+  },
+};
+Layout.reseed(Layout.seed);
+
+/* ── Recorder ─────────────────────────────────────────────────────────────────
+   Every action the student takes is time-stamped and logged, so the session can be
+   replayed and read back. Modelled on the Metacog core in the metacog-suite
+   (tce318p-fa26/metacog-suite/metadoku.html), which reconstructs state by REPLAYING
+   EVENTS FROM EMPTY rather than storing snapshots. Same discipline here: an event is
+   small and declarative, and the state at step k is whatever you get by applying the
+   first k events to a fresh app.
+
+   That works because (m, b, d, seed) fully determines a trajectory — so nothing about
+   the mathematics needs storing. Two exceptions, both stored as payload because they
+   cannot be recomputed:
+
+     • AI replies. Non-deterministic by nature. The text is kept in the event.
+     • Node positions. Deterministic ONLY through Layout's seeded rng, above.
+
+   THE ONE RULE: every state change a student can cause must pass through record().
+   Miss a path and replay diverges silently — the log will look complete and be wrong.
+   The three chokepoints today are changeParam(), addNumberVal() and sendChat(). If you
+   add a fourth way to change what is on screen, record it there too. */
+const Recorder = {
+  events: [],
+  startT: 0,
+  started: false,
+  sessionId: Math.abs((Date.now() ^ (Layout.seed << 5))).toString(16).slice(0, 16),
+
+  // The clock starts on the FIRST action, not at page load — otherwise every
+  // session begins with however long the student spent reading the screen.
+  now() {
+    if (!this.started) { this.started = true; this.startT = Date.now(); return 0; }
+    return Date.now() - this.startT;
+  },
+
+  record(type, payload) {
+    const t = this.now();
+    this.events.push({ i: this.events.length, type, t, ...payload });
+    return this.events.length;
+  },
+
+  reset() {
+    this.events = [];
+    this.startT = 0;
+    this.started = false;
+  },
+
+  // State as it stood after the first k events. A seed replaces the previous
+  // trajectory on the canvas (Revision 4), and a parameter change resets the graph —
+  // so the live picture is one trajectory at most, and reconstruction only has to
+  // find the parameters in force and the seed that survived them.
+  stateAt(k) {
+    const st = { m: 3, a: -1, d: 2, seed: null };
+    for (let i = 0; i < k && i < this.events.length; i++) {
+      const e = this.events[i];
+      if (e.type === 'param') { st[e.which] = e.value; st.seed = null; }
+      else if (e.type === 'seed')  st.seed = e.value;
+      else if (e.type === 'reset') st.seed = null;
+    }
+    return st;
+  },
+
+  describe(e) {
+    switch (e.type) {
+      case 'param': return `set ${e.which === 'a' ? 'b' : e.which} = ${e.value}`;
+      case 'seed':  return `explored ${e.value} → ${OUTCOME_LABEL[e.outcome] || e.outcome} (${e.steps} steps)`;
+      case 'ask':   return `asked: ${e.text.length > 60 ? e.text.slice(0, 60) + '…' : e.text}`;
+      case 'reply': return `AI replied (${e.word_count} words${e.elapsed_ms != null ? `, ${(e.elapsed_ms / 1000).toFixed(1)}s` : ''})`;
+      case 'reset': return 'cleared the canvas';
+      default:      return e.type;
+    }
+  },
+
+  // Word counts that survive mixed script: each CJK ideograph counts as one word,
+  // each other whitespace-delimited run as one. Splitting on spaces alone
+  // under-reports Chinese badly, and this app is used in Chinese. Same rule as
+  // verbatim-app, so counts from the two instruments are comparable.
+  wordCount(s) {
+    if (!s) return 0;
+    const cjk = (s.match(/[㐀-䶿一-鿿豈-﫿]/g) || []).length;
+    const rest = s.replace(/[㐀-䶿一-鿿豈-﫿]/g, ' ')
+                  .trim().split(/\s+/).filter(Boolean).length;
+    return cjk + rest;
+  },
+};
+
 // ── App ──────────────────────────────────────────────────────────────────────
 function App() {
   const GRID_BLOCK_SIZE = 100;
@@ -1696,6 +1829,9 @@ function App() {
   const panRef = useRef(null);          // active background-pan gesture (Revision 6)
   const viewRef = useRef({ scale: 1, x: 0, y: 0 }); // canvas zoom/pan transform — source of truth, read by the draw loop
   const fitTimerRef = useRef(null);     // pending debounced auto-fit timer
+  // The view fitToCanvas last set, so a follow-up re-fit can tell "the layout drifted"
+  // from "the user grabbed the canvas" and back off in the second case.
+  const lastAutoViewRef = useRef(null);
   const paramsRef = useRef({ m, a, d });
   const themeRef = useRef(THEME_PRESETS.dark);
   const layoutModeRef = useRef('spread');     // 'spread' (force) | 'polygon' | 'star' | 'sorted' | 'parity'
@@ -2154,6 +2290,11 @@ function App() {
     }
     const userMsg = { role: 'user', content: text };
     const newMessages = [...chatMessages, userMsg];
+    // The question goes in the log at the moment it is sent, tagged `student` because
+    // of where it came from rather than because of what it looks like. Speaker
+    // attribution is then a fact about the recording, not an inference from the text.
+    Recorder.record('ask', { text, word_count: Recorder.wordCount(text) });
+    const askedAt = Date.now();
     setChatMessages(newMessages);
     setChatInput('');
     setChatLoading(true);
@@ -2161,9 +2302,23 @@ function App() {
       const reply = await askAI(aiProvider, newMessages, buildSystemPrompt(language));
       // Trim leading/trailing whitespace — some models (Gemma especially) emit
       // leading newlines that render as blank padding under the user's message.
-      setChatMessages(prev => [...prev, { role: 'assistant', content: (reply || '(no response)').trim() }]);
+      const clean = (reply || '(no response)').trim();
+      Recorder.record('reply', {
+        text: clean, word_count: Recorder.wordCount(clean),
+        elapsed_ms: Date.now() - askedAt,
+        provider: aiProvider, model: getModelFor(aiProvider),
+      });
+      setChatMessages(prev => [...prev, { role: 'assistant', content: clean }]);
     } catch (e) {
-      setChatMessages(prev => [...prev, { role: 'assistant', content: getChatErrorMessage(e, language) }]);
+      const msg = getChatErrorMessage(e, language);
+      // Failures are recorded too. A session where the model kept erroring is a
+      // different session from one where it answered, and the transcript should say so.
+      Recorder.record('reply', {
+        text: msg, word_count: Recorder.wordCount(msg),
+        elapsed_ms: Date.now() - askedAt,
+        provider: aiProvider, model: getModelFor(aiProvider), error: true,
+      });
+      setChatMessages(prev => [...prev, { role: 'assistant', content: msg }]);
     }
     setChatLoading(false);
   }
@@ -2224,12 +2379,24 @@ function App() {
     // the drawer's 220ms slide and hope, re-fit off the size change itself,
     // debounced so it lands once the box has actually stopped moving. The
     // first call is startup, which has its own auto-fit, so it is skipped.
-    let fitTimer = null, startup = true;
+    // One fit is not enough. Hiding the reference grids resizes the canvas while the
+    // force layout is still moving, so a single fit 90ms later centres on a bounding
+    // box the nodes then drift out of — which is how the graph ended up jammed against
+    // the left edge after ticking the Grid box. So: fit as soon as the box has stopped
+    // changing, then fit again a few times with backoff while the simulation cools.
+    // Each fit is idempotent, and the moment the view stops matching what we set, the
+    // user has taken the wheel and the follow-ups stand down.
+    const SETTLE_FITS = [90, 400, 900, 1600];
+    let fitTimers = [], startup = true;
+    function clearFits() { fitTimers.forEach(clearTimeout); fitTimers = []; }
     function onResize() {
       resize();
       if (startup) { startup = false; return; }
-      clearTimeout(fitTimer);
-      fitTimer = setTimeout(fitToCanvas, 90);
+      clearFits();
+      fitTimers = SETTLE_FITS.map((delay, i) => setTimeout(() => {
+        if (i > 0 && viewMovedByUser()) { clearFits(); return; }
+        fitToCanvas();
+      }, delay));
     }
     resize();
     let ro = null;
@@ -2240,7 +2407,7 @@ function App() {
     window.addEventListener('resize', onResize);
     return () => {
       window.removeEventListener('resize', onResize);
-      clearTimeout(fitTimer);
+      clearFits();
       if (ro) ro.disconnect();
     };
   }, []);
@@ -2325,10 +2492,10 @@ function App() {
         if (!nodesRef.current.has(v)) {
           const existing = existingPositions.get(v);
           nodesRef.current.set(v, existing || {
-            x:  W / 2 + (Math.random() - 0.5) * 250,
-            y:  H / 2 + (Math.random() - 0.5) * 250,
-            vx: (Math.random() - 0.5) * 3,
-            vy: (Math.random() - 0.5) * 3,
+            x:  W / 2 + (Layout.random() - 0.5) * 250,
+            y:  H / 2 + (Layout.random() - 0.5) * 250,
+            vx: (Layout.random() - 0.5) * 3,
+            vy: (Layout.random() - 0.5) * 3,
             birthTime: now,
             pinned: false,
             dragging: false,
@@ -2425,7 +2592,11 @@ function App() {
     }
   }
 
-  function changeParam(setter, val) {
+  // `which` is the state key ('m' | 'a' | 'd'), not the label — b is stored as `a`.
+  // Recorded here rather than in the slider handlers so keyboard, drag and typed
+  // entry all land in the log through one door.
+  function changeParam(which, setter, val) {
+    Recorder.record('param', { which, value: val });
     setter(val);
     reset();
   }
@@ -2454,8 +2625,8 @@ function App() {
     for (const node of nodesRef.current.values()) {
       node.pinned = false;
       node.dragging = false;
-      node.vx = (Math.random() - 0.5) * 2;
-      node.vy = (Math.random() - 0.5) * 2;
+      node.vx = (Layout.random() - 0.5) * 2;
+      node.vy = (Layout.random() - 0.5) * 2;
       node.x = clampNodePosition(node.x, NODE_R, W);
       node.y = clampNodePosition(node.y, NODE_R, H);
     }
@@ -2546,7 +2717,31 @@ function App() {
     const scale = Math.max(MIN_ZOOM, Math.min(2.5, MAX_ZOOM, Math.min(W / bw, H / bh) * 0.92));
     const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
     viewRef.current = { scale, x: W / 2 - cx * scale, y: H / 2 - cy * scale };
+    lastAutoViewRef.current = { ...viewRef.current };
     setZoomPct(Math.round(scale * 100));
+  }
+
+  // Re-centre after a deliberate layout change, without waiting to be told by the
+  // ResizeObserver. Showing or hiding the reference grids changes the canvas width by
+  // hundreds of pixels, and relying on the observer alone left the graph parked off to
+  // one side. Same settling backoff as the resize path, for the same reason: one fit
+  // lands while the force layout is still moving.
+  function recenterAfterLayout() {
+    [0, 120, 450, 950, 1600].forEach((delay, i) => setTimeout(() => {
+      if (i > 1 && viewMovedByUser()) return;
+      fitToCanvas();
+    }, delay));
+  }
+
+  // True once the user has zoomed, panned or dragged since the last automatic fit.
+  // A follow-up re-fit checks this so chasing the settling layout never yanks the
+  // canvas out from under someone who has started moving it themselves.
+  function viewMovedByUser() {
+    const a = lastAutoViewRef.current, v = viewRef.current;
+    if (!a) return false;
+    return Math.abs(a.scale - v.scale) > 1e-6
+        || Math.abs(a.x - v.x) > 0.5
+        || Math.abs(a.y - v.y) > 0.5;
   }
 
   // After a layout change (new seed / Show Cycles toggle / startup), wait for the
@@ -2670,6 +2865,12 @@ function App() {
       setOverflow({ start: val, steps: seq.length - 1, maxValue });
     }
 
+    // Recorded with its outcome, so the timeline reads as reasoning rather than as
+    // a list of numbers: which seed, under which parameters, and what it did.
+    Recorder.record('seed', {
+      value: val, outcome, steps: seq.length - 1, maxValue, m, a, d,
+    });
+
     setLog(prev =>
       [{ start: val, outcome, steps: seq.length - 1, maxValue, m, a, d }, ...prev].slice(0, 20)
     );
@@ -2688,7 +2889,10 @@ function App() {
     const parsed = parseSingleStartInput(inputVal);
     if (parsed.kind === 'empty') {
       // Blank seed + Enter = a full reset (clears the canvas, the grid highlights, and the zoom/pan).
+      // Recorded here and not inside reset(), which changeParam also calls — a parameter
+      // change is one event, not a change plus a clear.
       maybeNudgeSave();
+      Recorder.record('reset', {});
       reset();
       setInputWarning('');
       return;
@@ -2746,9 +2950,9 @@ function App() {
         {/* Parameter sliders — the primary controls */}
         <div style={{ display: 'flex', gap: 22, alignItems: 'center', flexWrap: 'wrap' }}>
           {[
-            ['m', 'm', PARAM_COLORS.m, m, v => changeParam(setM, v), 1, 9],
-            ['a', 'b', PARAM_COLORS.a, a, v => changeParam(setA, v), -9, 9],
-            ['d', 'd', PARAM_COLORS.d, d, v => changeParam(setD, v), 2, 9],
+            ['m', 'm', PARAM_COLORS.m, m, v => changeParam('m', setM, v), 1, 9],
+            ['a', 'b', PARAM_COLORS.a, a, v => changeParam('a', setA, v), -9, 9],
+            ['d', 'd', PARAM_COLORS.d, d, v => changeParam('d', setD, v), 2, 9],
           ].map(([key, label, color, val, setter, min, max]) => (
             <label key={label} style={{ fontSize: 17, display: 'flex', gap: 8, alignItems: 'center', color }}>
               <span style={{ minWidth: 24, fontWeight: 'bold' }}>{label} =</span>
@@ -3304,7 +3508,7 @@ function App() {
             <input
               type="checkbox"
               checked={showDataGrids}
-              onChange={e => setShowDataGrids(e.target.checked)}
+              onChange={e => { setShowDataGrids(e.target.checked); recenterAfterLayout(); }}
             />
             {t('grid')}
           </label>
