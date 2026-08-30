@@ -4,9 +4,46 @@ An interactive visualization tool for exploring parameterized sequence rules thr
 
 ## Versions
 
-### Version 2 (Latest) ✨
+### Version 2.2 (Latest) ✨
 
-**[Launch Version 2](https://ohiomathteacher.github.io/orbit-explorer/)**
+**[Launch Orbit Explorer](https://ohiomathteacher.github.io/orbit-explorer/)**
+
+The version you are running is stamped faintly in the bottom-right corner of the
+canvas — `v2.2 · <build>`. If a change seems missing, check that stamp first: it is
+the quickest way to tell whether you are on the build you think you are.
+
+**New in v2.2 (August 29, 2026) — session recording:**
+
+- **Every action is recorded, in order and timestamped** from the first thing the
+  student does. Parameter changes, each seed with the outcome it produced, max steps,
+  layout mode, prime colouring, step numbers, Reset Layout, node drags, and both sides
+  of the AI conversation with its timing.
+- **Download Session** — in the Cases panel, beside Download Cases. Writes the whole
+  sitting as one JSON file. Offered even with no conversation, because exploring
+  without asking anything is still a session.
+  - `events` — the full record, in order.
+  - `turns` — the conversation projected into [verbatim-app](https://github.com/OhioMathTeacher/verbatim-app)'s
+    shape, so it reads with the same tooling. Speaker is a fact about where the text
+    came from, not an inference from how it looks.
+  - `saved_cases`, the layout seed, the app version and build.
+- **What this makes possible that neither tool could do alone:** verbatim records the
+  conversation but never sees the applet; Cases records the applet but not a word of
+  the talk. One session file ties *what the student did* to *what they said about it*,
+  on the same clock.
+- **Seeded layout.** Node positions come from a seeded PRNG rather than `Math.random()`,
+  and the seed travels in the session file — so a recorded session can be redrawn node
+  for node, not merely re-derived.
+- **`OrbitRecorder` on `window`** for checking a recording from the browser console.
+
+**Fixed in v2.2:**
+
+- Grid highlights follow the trajectory currently drawn instead of accumulating every
+  seed explored. Exploring 1111 and then clicking another number used to leave 1111's
+  whole chain lit beside the new one.
+- The graph re-centres while the force layout settles, so showing or hiding the Data
+  Reference Grids no longer parks it against an edge.
+- The AI panel handle is a 36px grip with a hover state, not a 16px strip carrying a
+  13px chevron that nobody found.
 
 **New in v2 (March 22, 2026):**
 
@@ -33,7 +70,7 @@ All features from v1 remain available.
 
 ### Version 1 (Stable)
 
-**[Launch Version 1](https://github.com/OhioMathTeacher/orbit-explorer/tree/v1)** | [View v1 Source](https://github.com/OhioMathTeacher/orbit-explorer/blob/v1/index.html)
+_No `v1` branch or tag exists in this repository — both links here previously pointed at one and were dead. v1 survives only as history on `main`; browse [the commit log](https://github.com/OhioMathTeacher/orbit-explorer/commits/main) to reach it._
 
 **Features in v1:**
 
