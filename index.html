@@ -9,7 +9,7 @@
   <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
-      var BUILD = '1788049517-r8';
+      var BUILD = '1788050189-r9';
       // Published so the version stamp in the canvas corner can show it. The
       // cache-buster is already the one string that changes on every deploy, so
       // reusing it means the stamp cannot drift out of step with what was shipped.
@@ -1738,12 +1738,29 @@ const Recorder = {
   // so the live picture is one trajectory at most, and reconstruction only has to
   // find the parameters in force and the seed that survived them.
   stateAt(k) {
-    const st = { m: 3, a: -1, d: 2, seed: null };
+    // Defaults must match the useState initialisers in App. A session that never
+    // touched a control records nothing for it, so the default IS the recorded value.
+    const st = {
+      m: 3, a: -1, d: 2, seed: null,
+      steps: 50, layout: 'spread', primes: false, stepnums: false,
+      cw: null, ch: null, pins: {},
+    };
     for (let i = 0; i < k && i < this.events.length; i++) {
       const e = this.events[i];
-      if (e.type === 'param') { st[e.which] = e.value; st.seed = null; }
-      else if (e.type === 'seed')  st.seed = e.value;
-      else if (e.type === 'reset') st.seed = null;
+      switch (e.type) {
+        // A parameter change resets the canvas, so it drops the seed and any pins.
+        case 'param':    st[e.which] = e.value; st.seed = null; st.pins = {}; break;
+        case 'seed':     st.seed = e.value; st.pins = {};
+                         if (e.cw) { st.cw = e.cw; st.ch = e.ch; } break;
+        case 'reset':    st.seed = null; st.pins = {}; break;
+        case 'steps':    st.steps = e.value; break;
+        case 'layout':   st.layout = e.mode; break;
+        case 'primes':   st.primes = e.on; break;
+        case 'stepnums': st.stepnums = e.on; break;
+        case 'relayout': st.pins = {}; break;
+        case 'drag':     st.pins = { ...st.pins, [e.value]: { x: e.x, y: e.y } }; break;
+        // 'ask' and 'reply' carry the conversation, not the picture.
+      }
     }
     return st;
   },
@@ -1754,8 +1771,14 @@ const Recorder = {
       case 'seed':  return `explored ${e.value} → ${OUTCOME_LABEL[e.outcome] || e.outcome} (${e.steps} steps)`;
       case 'ask':   return `asked: ${e.text.length > 60 ? e.text.slice(0, 60) + '…' : e.text}`;
       case 'reply': return `AI replied (${e.word_count} words${e.elapsed_ms != null ? `, ${(e.elapsed_ms / 1000).toFixed(1)}s` : ''})`;
-      case 'reset': return 'cleared the canvas';
-      default:      return e.type;
+      case 'reset':    return 'cleared the canvas';
+      case 'steps':    return `set max steps to ${e.value}`;
+      case 'layout':   return `switched layout to ${e.mode}`;
+      case 'primes':   return e.on ? 'coloured the primes' : 'turned prime colouring off';
+      case 'stepnums': return e.on ? 'showed step numbers' : 'hid step numbers';
+      case 'relayout': return 'reset the layout';
+      case 'drag':     return `moved node ${e.value}`;
+      default:         return e.type;
     }
   },
 
@@ -2708,6 +2731,10 @@ function App() {
     const cvs = canvasRef.current;
     const W = cvs?.width ?? 900;
     const H = cvs?.height ?? 560;
+    // Recorded before the loop, because the loop draws from the seeded PRNG: an
+    // unrecorded Reset Layout desynchronises the stream and every node placed
+    // afterwards lands somewhere the student never saw.
+    Recorder.record('relayout', { cw: W, ch: H });
     for (const node of nodesRef.current.values()) {
       node.pinned = false;
       node.dragging = false;
@@ -2908,6 +2935,12 @@ function App() {
         position.pinned = true;
         position.vx = 0;
         position.vy = 0;
+        // Where it was dropped, not where it was grabbed — the drop is the decision.
+        Recorder.record('drag', {
+          value: drag.value,
+          x: Math.round(position.x),
+          y: Math.round(position.y),
+        });
       }
       dragStateRef.current = null;
       setIsDraggingNode(false);
@@ -2955,6 +2988,10 @@ function App() {
     // a list of numbers: which seed, under which parameters, and what it did.
     Recorder.record('seed', {
       value: val, outcome, steps: seq.length - 1, maxValue, m, a, d,
+      // Node start positions come off W/2 and H/2, so the canvas size is part of
+      // what determines the picture. Replay reconstructs at the recorded size and
+      // then fits, which keeps playback honest on a different-sized window.
+      cw: canvasRef.current?.width ?? null, ch: canvasRef.current?.height ?? null,
     });
 
     setLog(prev =>
@@ -3077,7 +3114,10 @@ function App() {
                 type="text" inputMode="numeric" value={maxVisibleSteps}
                 onChange={e => {
                   const val = parseInt(e.target.value, 10);
-                  if (!isNaN(val) && val > 0 && val <= 9999) setMaxVisibleSteps(val);
+                  if (!isNaN(val) && val > 0 && val <= 9999) {
+                    Recorder.record('steps', { value: val });
+                    setMaxVisibleSteps(val);
+                  }
                 }}
                 style={{
                   width: 58, background: uiTheme.surfaceBg, border: `1px solid ${uiTheme.borderStrong}`,
@@ -3136,17 +3176,17 @@ function App() {
                     ['parity',  t('layoutParity'),  t('layoutParityHelp')],
                   ].map(([mode, label, help]) => (
                     <label key={mode} title={help} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 14px', fontSize: 14, cursor: 'pointer' }}>
-                      <input type="radio" name="layoutMode" checked={layoutMode === mode} onChange={() => setLayoutMode(mode)} />
+                      <input type="radio" name="layoutMode" checked={layoutMode === mode} onChange={() => { Recorder.record('layout', { mode }); setLayoutMode(mode); }} />
                       {label}
                     </label>
                   ))}
                   <div style={{ height: 1, background: uiTheme.border, margin: '6px 10px' }} />
                   <label title={t('colorPrimesHelp')} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 14px', fontSize: 14, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={colorPrimes} onChange={e => setColorPrimes(e.target.checked)} />
+                    <input type="checkbox" checked={colorPrimes} onChange={e => { Recorder.record('primes', { on: e.target.checked }); setColorPrimes(e.target.checked); }} />
                     {t('colorPrimesLabel')}
                   </label>
                   <label title={t('stepNumbersHelp')} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 14px', fontSize: 14, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={showStepNumbers} onChange={e => setShowStepNumbers(e.target.checked)} />
+                    <input type="checkbox" checked={showStepNumbers} onChange={e => { Recorder.record('stepnums', { on: e.target.checked }); setShowStepNumbers(e.target.checked); }} />
                     {t('stepNumbersLabel')}
                   </label>
                   <label title={t('parityHelp')} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 14px', fontSize: 14, cursor: 'pointer' }}>
