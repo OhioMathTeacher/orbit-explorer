@@ -373,6 +373,95 @@ const AI_CLOUD_PROVIDERS = [
   },
 ];
 
+/* A model that runs inside this page on the student's own graphics hardware.
+   Ported from verbatim-app, where this replaced the Ollama instructions for the
+   same reason it replaces them here: a student who downloads a model has no way
+   to make a web page see it. Ollama needs a server running and CORS configured,
+   which is a path only an instructor ever walked. WebGPU asks for one click and
+   a wait.
+
+   What it costs instead: the weights come from a CDN the first time, so the very
+   first run needs a network and enough graphics memory, and a 1-3B model is a
+   weaker mathematician than anything under Pay. Both are recorded -- getModelFor
+   returns this model's full id like any other -- so a transcript is never
+   ambiguous about what produced it.
+
+   The library is fetched only when this tab is opened. A student who never opens
+   it downloads nothing. */
+const WEBGPU_LIB = 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.84/+esm';
+
+/* Ids are checked against the library's own catalogue at load rather than
+   trusted. A hardcoded id the upstream project retires would otherwise break
+   every student at once, mid-class -- which is exactly what a retired Groq
+   model already did to this page once. */
+const WEBGPU_PICKS = [
+  ['Qwen2.5-1.5B-Instruct-q4f16_1-MLC', true ],
+  ['Llama-3.2-1B-Instruct-q4f16_1-MLC', false],
+  ['Llama-3.2-3B-Instruct-q4f16_1-MLC', false],
+  ['Qwen2.5-3B-Instruct-q4f16_1-MLC',   false],
+];
+
+/* navigator.gpu existing is not the same as WebGPU working: a browser can expose
+   the object and still hand back no adapter -- no usable card, a blocklisted
+   driver, a remote session. Asking for the adapter is the only check that tells
+   them apart, and it is the difference between being told plainly to use another
+   tab and picking a model, waiting, and getting an opaque failure. */
+let wgpuAdapter = null;
+async function webgpuProbe() {
+  if (wgpuAdapter !== null) return wgpuAdapter;
+  if (!(typeof navigator !== 'undefined' && navigator.gpu)) { wgpuAdapter = false; return false; }
+  try { wgpuAdapter = !!(await navigator.gpu.requestAdapter()); }
+  catch (e) { wgpuAdapter = false; }
+  return wgpuAdapter;
+}
+const webgpuShort = id => id.replace(/-q4f\d+(_\d+)?-MLC$/, '').replace(/-Instruct$/, '');
+
+let wgpuLib = null, wgpuList = null, wgpuEngine = null, wgpuEngineId = null;
+/* React owns the panel here, where verbatim called renderWebgpuPanel() directly.
+   The engine layer stays framework-free and reports through this callback. */
+let onWebgpuState = () => {};
+function setWebgpuListener(fn) { onWebgpuState = fn || (() => {}); }
+function emitWebgpu(patch) { try { onWebgpuState(patch); } catch (e) {} }
+
+async function webgpuLoad() {
+  if (wgpuList) return wgpuList;
+  emitWebgpu({ phase: 'lib', note: '', pct: 0 });
+  if (!(await webgpuProbe())) { emitWebgpu({ phase: 'nogpu' }); return null; }
+  try { wgpuLib = await import(WEBGPU_LIB); }
+  catch (e) { emitWebgpu({ phase: 'liberr', note: (e && e.message) || String(e) }); return null; }
+  const have = new Map();
+  for (const m of (wgpuLib.prebuiltAppConfig || {}).model_list || []) have.set(m.model_id, m);
+  wgpuList = WEBGPU_PICKS.filter(([id]) => have.has(id))
+    .map(([id, rec]) => ({ id, rec, gb: (have.get(id).vram_required_MB || 0) / 1024 }));
+  emitWebgpu({ phase: 'listed', list: wgpuList });
+  return wgpuList;
+}
+
+/* Switching model throws the old engine away rather than holding two sets of
+   weights in graphics memory. */
+async function webgpuEngineFor(id) {
+  if (wgpuEngine && wgpuEngineId === id) return wgpuEngine;
+  await webgpuLoad();
+  if (!wgpuLib) throw new Error('The in-page model runner could not be loaded.');
+  if (wgpuEngine) { try { await wgpuEngine.unload(); } catch (e) {} wgpuEngine = null; wgpuEngineId = null; }
+  emitWebgpu({ phase: 'getting', pct: 0, note: '' });
+  try {
+    wgpuEngine = await wgpuLib.CreateMLCEngine(id, {
+      initProgressCallback: r => emitWebgpu({
+        phase: 'getting',
+        pct: Math.max(0, Math.min(1, r.progress || 0)),
+        note: r.text || '',
+      }),
+    });
+  } catch (e) {
+    emitWebgpu({ phase: 'error', note: (e && e.message) || String(e) });
+    throw e;
+  }
+  wgpuEngineId = id;
+  emitWebgpu({ phase: 'ready', pct: 1, note: '' });
+  return wgpuEngine;
+}
+
 // Well-known ports for popular local LLM servers. Probed when the AI Setup
 // modal opens so users running these don't have to type a URL. The result is
 // surfaced as a one-click "Detected:" tile — the user still chooses.
@@ -475,6 +564,7 @@ function shortModelLabel(id) {
    carries its model in the provider id, everything else looks up the cloud table. */
 function getModelFor(providerId) {
   if (!providerId || providerId === 'none') return null;
+  if (providerId.startsWith('webgpu:')) return providerId.slice(7);
   const local = parseLocalProvider(providerId);
   if (local) return local.model || 'openai-compatible';
   return AI_CLOUD_PROVIDERS.find(p => p.id === providerId)?.model || null;
@@ -483,6 +573,20 @@ function getModelFor(providerId) {
 async function askAI(providerId, messages, systemPrompt) {
   if (!providerId || providerId === 'none') {
     throw new Error('No AI provider selected. Open the 🤖 AI menu to choose one.');
+  }
+
+  // In-page model: no fetch and no key, the weights are already in this browser.
+  // The body is the same OpenAI shape as everywhere else, so the system prompt
+  // and turn history pass through unchanged.
+  if (providerId.startsWith('webgpu:')) {
+    const engine = await webgpuEngineFor(providerId.slice(7));
+    const r = await engine.chat.completions.create({
+      messages: [{ role: 'system', content: systemPrompt }, ...messages],
+      temperature: 0.7,
+    });
+    const out = r?.choices?.[0]?.message?.content;
+    if (!out) throw new Error('The in-page model returned an empty reply.');
+    return out;
   }
 
   // Local OpenAI-compatible endpoint (user-configured URL)
@@ -1900,7 +2004,11 @@ function App() {
   // Which cost-group is showing: 'local' | 'free' | 'paid'. Opens on the tab the
   // current choice already lives on, so reopening the panel shows you your own
   // selection rather than making you hunt for it.
-  const [aiTab, setAiTab] = useState('local');
+  const [aiTab, setAiTab] = useState('webgpu');
+  // Panel state for the in-page model. The engine layer is framework-free
+  // and pushes here through setWebgpuListener.
+  const [wgpu, setWgpu] = useState({ phase: 'idle', pct: 0, note: '', list: null });
+  useEffect(() => { setWebgpuListener(patch => setWgpu(prev => ({ ...prev, ...patch }))); }, []);
   const [aboutOpen, setAboutOpen] = useState(false);
   // Verified-connection state. localProbeOk turns true ONLY after the boot
   // health check (or AI Setup re-selection) confirms a local endpoint
@@ -3436,7 +3544,7 @@ function App() {
           {/* Tabs by cost to the person, not by vendor. "Selected:" sits in the
               same row so the current choice is legible from every tab. */}
           <div className="ai-tabs">
-            <button className={`ai-tab${aiTab === 'local' ? ' on' : ''}`} onClick={() => setAiTab('local')}>Local</button>
+            <button className={`ai-tab${aiTab === 'webgpu' ? ' on' : ''}`} onClick={() => setAiTab('webgpu')}>In this page</button>
             <button className={`ai-tab${aiTab === 'free'  ? ' on' : ''}`} onClick={() => setAiTab('free')}>$0</button>
             <button className={`ai-tab${aiTab === 'paid'  ? ' on' : ''}`} onClick={() => setAiTab('paid')}>Pay (Own Key)</button>
             <span className="ai-selected">
@@ -3454,7 +3562,7 @@ function App() {
           </div>
 
           <div className="ai-provider-cards">
-            {aiTab !== 'local' && AI_CLOUD_PROVIDERS.filter(p => p.tier === aiTab).map(p => (
+            {aiTab !== 'webgpu' && AI_CLOUD_PROVIDERS.filter(p => p.tier === aiTab).map(p => (
               <button
                 key={p.id}
                 className={`ai-provider-card${aiProvider === p.id ? ' selected' : ''}`}
@@ -3480,71 +3588,68 @@ function App() {
             )}
 
             {/* Local-model cards: one per discovered model per endpoint */}
-            {aiTab === 'local' && localEndpoints.flatMap(url => (localModelsByEndpoint[url] || []).map(m => {
-              const provId = `local:${url}:${m.id}`;
+            {aiTab === 'webgpu' && (wgpu.list || []).map(m => {
+              const provId = `webgpu:${m.id}`;
               return (
                 <button
                   key={provId}
                   className={`ai-provider-card${aiProvider === provId ? ' selected' : ''}`}
-                  onClick={() => { setStoredProvider(provId); setAiProvider(provId); setLocalProbeOk(true); }}
+                  onClick={() => { setStoredProvider(provId); setAiProvider(provId); webgpuEngineFor(m.id).catch(() => {}); }}
                 >
-                  <div className="ai-card-title">{m.label}</div>
-                  <div className="ai-card-desc">Runs on your machine.</div>
-                  <div className="ai-card-badge ai-badge-local">Local</div>
-                </button>
-              );
-            }))}
-            {/* Detected local servers: well-known ports that responded to a probe.
-                One click saves the endpoint AND selects its first model. */}
-            {aiTab === 'local' && suggestedLocalServers.map(sug => {
-              const firstModel = sug.models[0];
-              const provId = `local:${sug.url}:${firstModel.id}`;
-              return (
-                <button
-                  key={`sug:${sug.url}`}
-                  className="ai-provider-card"
-                  style={{ borderStyle: 'dashed' }}
-                  onClick={() => {
-                    const next = [...localEndpoints, sug.url];
-                    setStoredLocalEndpoints(next);
-                    setLocalEndpoints(next);
-                    setLocalModelsByEndpoint(prev => ({ ...prev, [sug.url]: sug.models }));
-                    setStoredProvider(provId);
-                    setAiProvider(provId);
-                    setLocalProbeOk(true);
-                    setSuggestedLocalServers(prev => prev.filter(s => s.url !== sug.url));
-                  }}
-                >
-                  <div className="ai-card-title">Detected: {sug.url.replace(/^https?:\/\//, '')}</div>
+                  <div className="ai-card-title">{webgpuShort(m.id)}</div>
                   <div className="ai-card-desc">
-                    {sug.hint} · {firstModel.label}{sug.models.length > 1 ? ` (+${sug.models.length - 1} more)` : ''} · click to add
+                    Runs on your graphics hardware, in this page. No key, no account.
+                    {m.gb ? ` About ${m.gb.toFixed(1)} GB.` : ''}
                   </div>
-                  <div className="ai-card-badge ai-badge-local">Local</div>
+                  <div className="ai-card-badge ai-badge-free">{m.rec ? 'Recommended' : 'In page'}</div>
                 </button>
               );
             })}
-
-            {/* Single "+ Add local server" tile in the grid */}
-            {aiTab === 'local' && (
-              <button
-                className="ai-provider-card"
-                onClick={() => setShowAddEndpoint(true)}
-                style={{ borderStyle: 'dashed' }}
-              >
-                <div className="ai-card-title">+ Add local server</div>
-                <div className="ai-card-desc">Connect to an OpenAI-compatible LLM on your machine or network.</div>
-              </button>
-            )}
           </div>
 
-          {/* Say which ports were tried. A student whose server is on a port we
-              do not probe otherwise reads an empty tab as "this app cannot do
-              local models" rather than "add it by hand". */}
-          {aiTab === 'local' && (
-            <p className="ai-foot">
-              Auto-checked ports {WELL_KNOWN_LOCAL_PORTS.map(p => p.url.replace(/^.*:/, '')).join(', ')} on
-              this device and on the computer that served this page.
-            </p>
+          {/* One panel under the cards carrying every state the download can be
+              in. A student waiting on multiple gigabytes needs to see that
+              something is happening; a student whose browser cannot do this at
+              all needs to be told before they wait, not after. */}
+          {aiTab === 'webgpu' && (
+            <div className="ai-foot">
+              {wgpu.phase === 'idle' && (
+                <button className="ai-provider-card" style={{ borderStyle: 'dashed', width: '100%' }}
+                        onClick={() => webgpuLoad()}>
+                  <div className="ai-card-title">Show the models that can run here</div>
+                  <div className="ai-card-desc">
+                    Checks this browser for WebGPU and lists what it can run. Nothing downloads yet.
+                  </div>
+                </button>
+              )}
+              {wgpu.phase === 'lib' && <p>Loading the in-page model runner…</p>}
+              {wgpu.phase === 'nogpu' && (
+                <p>This browser cannot run a model in the page. WebGPU is needed and this browser does
+                   not offer it — use one of the other tabs, or open this page in an up-to-date Chrome,
+                   Edge or Safari.</p>
+              )}
+              {wgpu.phase === 'liberr' && (
+                <p>The model runner could not be loaded{wgpu.note ? `: ${wgpu.note}` : '.'} Use one of
+                   the other tabs.</p>
+              )}
+              {wgpu.phase === 'getting' && (
+                <div>
+                  <p>Downloading the model — {Math.round(wgpu.pct * 100)}%{wgpu.note ? ` · ${wgpu.note}` : ''}</p>
+                  <div style={{ height: 6, background: 'rgba(255,255,255,.12)', borderRadius: 3, overflow: 'hidden' }}>
+                    <i style={{ display: 'block', height: '100%', width: `${Math.round(wgpu.pct * 100)}%`,
+                                background: '#5aa9ff', transition: 'width .2s' }} />
+                  </div>
+                  <p>It is fetched once and then kept in this browser, so later sessions start straight away.</p>
+                </div>
+              )}
+              {wgpu.phase === 'ready' && <p>Ready. The model is running in this page.</p>}
+              {wgpu.phase === 'error' && <p>The model could not start{wgpu.note ? `: ${wgpu.note}` : '.'}</p>}
+              {wgpu.phase !== 'nogpu' && wgpu.phase !== 'liberr' && (
+                <p>Nothing you type leaves this computer. The weights come from the HuggingFace CDN,
+                   which may not load from mainland China — if it does not, use the key your instructor
+                   gives you under Pay (Own Key).</p>
+              )}
+            </div>
           )}
 
           {/* Key entry: shown when a cloud provider is selected. Field always starts
