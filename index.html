@@ -9,7 +9,7 @@
   <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
-      var BUILD = '1788047158-r7';
+      var BUILD = '1788049517-r8';
       // Published so the version stamp in the canvas corner can show it. The
       // cache-buster is already the one string that changes on every deploy, so
       // reusing it means the stamp cannot drift out of step with what was shipped.
@@ -1772,6 +1772,12 @@ const Recorder = {
   },
 };
 
+/* Exposed for inspection. The whole point of a recorder is being able to check that
+   it recorded, and a script-scoped const cannot be reached from the console — so
+   `OrbitRecorder.events` in DevTools is the quick answer to "is this thing on?".
+   Read-only in practice: nothing in the app reads it back off window. */
+window.OrbitRecorder = Recorder;
+
 // ── App ──────────────────────────────────────────────────────────────────────
 function App() {
   const GRID_BLOCK_SIZE = 100;
@@ -1883,6 +1889,7 @@ function App() {
   const [isDraggingNode, setIsDraggingNode] = useState(false);
   const [showDataGrids, setShowDataGrids] = useState(false); // the Grid box now hides the Data Reference Grids
   const [aiOpen, setAiOpen] = useState(false);               // AI chat drawer, shut until AI Setup is opened
+  const [drawerEdgeHover, setDrawerEdgeHover] = useState(false); // the drawer handle lights up under the cursor
   const [layoutMode, setLayoutMode] = useState('spread');
   const [colorPrimes, setColorPrimes] = useState(false);
   const [useLightTheme, setUseLightTheme] = useState(false);
@@ -2231,6 +2238,64 @@ function App() {
       setGhSaveStatus(ok ? 'saved' : 'error');
       setTimeout(() => setGhSaveStatus(null), 4000);
     }
+  }
+
+  /* The session, as one JSON file. This is the payoff of the event log: the whole
+     sitting — which parameters were tried, which seeds and what they did, and every
+     question put to the AI with its answer — in the order it happened, timestamped
+     from the first action.
+
+     Shaped to sit alongside verbatim-app's session files rather than to replace them.
+     `turns` is a projection of the ask/reply events in verbatim's own shape, so the
+     conversation can be read by the same tooling; `events` is the full record, which
+     verbatim has no equivalent for because it never sees the applet. The pairing is
+     the point — what she did and what she said about it, in one file.
+
+     layout_seed is here so a replay redraws the same picture, not just the same maths. */
+  function downloadSessionJson() {
+    const now = new Date();
+    const turns = [];
+    for (const e of Recorder.events) {
+      if (e.type === 'ask' || e.type === 'reply') {
+        turns.push({
+          i: turns.length,
+          role: e.type === 'ask' ? 'student' : 'ai',
+          text: e.text,
+          t_ms: e.t,
+          word_count: e.word_count,
+          ...(e.elapsed_ms != null ? { elapsed_ms: e.elapsed_ms } : {}),
+          ...(e.provider ? { provider: e.provider, model: e.model } : {}),
+          ...(e.error ? { error: true } : {}),
+        });
+      }
+    }
+    const payload = {
+      schema: 'orbit-explorer-session/1',
+      session_id: Recorder.sessionId,
+      app: { name: 'Orbit Explorer', version: APP_VERSION, build: window.APP_BUILD || null },
+      layout_seed: Layout.seed,
+      language,
+      started_utc: Recorder.started ? new Date(Recorder.startT).toISOString() : null,
+      exported_utc: now.toISOString(),
+      params_at_export: { m, b: a, d },
+      counts: {
+        events: Recorder.events.length,
+        seeds: Recorder.events.filter(e => e.type === 'seed').length,
+        questions: Recorder.events.filter(e => e.type === 'ask').length,
+      },
+      events: Recorder.events,
+      turns,
+      saved_cases: savedCases,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `orbit-explorer-session-${now.toISOString().slice(0,19).replace(/:/g,'-')}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   }
 
   function downloadCasesTable() {
@@ -3607,6 +3672,26 @@ function App() {
                   }}>
                   💾 Download Cases
                 </button>
+                {/* The session file. Sits beside Download Cases because this is the
+                    research-export corner, and unlike the chat Save it is offered even
+                    with no conversation — exploring without asking anything is still a
+                    session, and still data. */}
+                <button
+                  onPointerDown={e => e.stopPropagation()}
+                  onClick={downloadSessionJson}
+                  title="Download the whole session — parameters, seeds and the AI conversation — as JSON"
+                  style={{
+                    background: 'linear-gradient(135deg, #2f5f7a 0%, #4989a9 100%)',
+                    border: 'none',
+                    color: 'white',
+                    borderRadius: 4,
+                    padding: '4px 12px',
+                    fontSize: 11,
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                  }}>
+                  🎞 Download Session
+                </button>
                 <button
                   onPointerDown={e => e.stopPropagation()}
                   onClick={() => setShowDataTable(false)}
@@ -3749,17 +3834,34 @@ function App() {
         {/* ── AI Chat Panel ── */}
         <div style={{ display: 'flex', flexShrink: 0, order: 2, height: '100%' }}>
           {/* The edge. Click it to slide the drawer open or shut — the window
-              keeps its size, and the width goes to the canvas, not the grids. */}
+              keeps its size, and the width goes to the canvas, not the grids.
+              It was a 16px strip carrying a 13px chevron, and nobody found it. A
+              control this useful should not have to be hunted for, so it is now a
+              full-height handle wide enough to hit without aiming, with a grip and a
+              hover state so it reads as something you can take hold of. */}
           <div
             onClick={() => setAiOpen(o => !o)}
+            onMouseEnter={() => setDrawerEdgeHover(true)}
+            onMouseLeave={() => setDrawerEdgeHover(false)}
             title={aiOpen ? t('aiDrawerClose') : t('aiDrawerOpen')}
             style={{
-              width: 16, flexShrink: 0, cursor: 'pointer', userSelect: 'none',
-              background: uiTheme.panelBg, borderLeft: `1px solid ${uiTheme.border}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: uiTheme.textSecondary, fontSize: 13,
+              width: 36, flexShrink: 0, cursor: 'pointer', userSelect: 'none',
+              background: drawerEdgeHover ? uiTheme.overlayBgSoft : uiTheme.panelBg,
+              borderLeft: `1px solid ${uiTheme.border}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+              color: drawerEdgeHover ? uiTheme.textPrimary : uiTheme.textSecondary,
+              fontSize: 30, fontWeight: 700, lineHeight: 1,
+              transition: 'background 120ms, color 120ms',
             }}
-          >{aiOpen ? '\u203a' : '\u2039'}</div>
+          >
+            <span style={{ marginTop: -4 }}>{aiOpen ? '\u203a' : '\u2039'}</span>
+            {/* Two-line grip. The chevron alone still reads as a stray character;
+                the grip is what makes the strip look like an edge you can pull. */}
+            <span aria-hidden="true" style={{ display: 'flex', gap: 2, opacity: drawerEdgeHover ? 0.9 : 0.55 }}>
+              <span style={{ width: 2, height: 24, background: 'currentColor', borderRadius: 1 }} />
+              <span style={{ width: 2, height: 24, background: 'currentColor', borderRadius: 1 }} />
+            </span>
+          </div>
           <div style={{
             width: aiOpen ? 320 : 0, minWidth: 0, background: uiTheme.panelBg,
             display: 'flex', flexDirection: 'column', overflow: 'hidden',
