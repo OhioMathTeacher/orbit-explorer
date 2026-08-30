@@ -310,6 +310,15 @@ const OPENAI_COMPAT_PRESETS = [
 // and not something a student can diagnose.
 const AI_CLOUD_PROVIDERS = [
   {
+    id: 'deepseek', title: 'DeepSeek 深度求索',
+    model: 'deepseek-chat', tier: 'paid', api: 'openai',
+    baseUrl: 'https://api.deepseek.com/v1',
+    desc: 'Your own key. Works from mainland China; the model this project standardises on.',
+    badge: 'Own Key', badgeClass: 'ai-badge-paid',
+    keyUrl: 'https://platform.deepseek.com/api_keys', placeholder: 'sk-…',
+    keyHint: 'Stored only in your browser — sent to DeepSeek and nowhere else.',
+  },
+  {
     id: 'anthropic', title: 'Anthropic Claude',
     model: 'claude-sonnet-5', tier: 'paid',
     desc: 'Your own key. Claude Sonnet — powerful and precise.',
@@ -326,6 +335,33 @@ const AI_CLOUD_PROVIDERS = [
     badge: 'Free', badgeClass: 'ai-badge-free',
     keyUrl: 'https://aistudio.google.com/apikey', placeholder: 'AIza…',
     keyHint: '<strong style="color:#d4a843">Use a personal Gmail, not a school account</strong> — school accounts are usually blocked from AI Studio. Stored only in your browser.',
+  },
+  {
+    id: 'moonshot', title: 'Kimi 月之暗面',
+    model: 'moonshot-v1-8k', tier: 'paid', api: 'openai',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    desc: 'Your own key. Moonshot AI.',
+    badge: 'Own Key', badgeClass: 'ai-badge-paid',
+    keyUrl: 'https://platform.moonshot.cn/console/api-keys', placeholder: 'sk-…',
+    keyHint: 'Stored only in your browser — sent to Moonshot and nowhere else.',
+  },
+  {
+    id: 'zhipu', title: 'GLM 智谱清言',
+    model: 'glm-4-plus', tier: 'paid', api: 'openai',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    desc: 'Your own key. Zhipu AI.',
+    badge: 'Own Key', badgeClass: 'ai-badge-paid',
+    keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys', placeholder: '…',
+    keyHint: 'Stored only in your browser — sent to Zhipu and nowhere else.',
+  },
+  {
+    id: 'qwen', title: 'Qwen 通义千问',
+    model: 'qwen-plus', tier: 'paid', api: 'openai',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    desc: 'Your own key. Alibaba Cloud.',
+    badge: 'Own Key', badgeClass: 'ai-badge-paid',
+    keyUrl: 'https://bailian.console.aliyun.com/', placeholder: 'sk-…',
+    keyHint: 'Stored only in your browser — sent to Alibaba Cloud and nowhere else.',
   },
   {
     id: 'groq', title: 'Groq (GPT-OSS 120B)',
@@ -559,6 +595,36 @@ async function askAI(providerId, messages, systemPrompt) {
       if (res.status === 401) throw new Error('Invalid Groq key. Update it via 🤖 AI.');
       if (res.status === 404) throw new Error(`Groq model ${cloudModel} is unavailable — it may have been retired. This needs a fix in the app, not a new key.`);
       throw new Error(`Groq ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    return data?.choices?.[0]?.message?.content || '';
+  }
+
+  // Named OpenAI-compatible cards (DeepSeek, Kimi, GLM, Qwen). One branch rather
+  // than one per provider: the card carries its own baseUrl and model, so adding
+  // a service is a data change. Kept beside the hand-written branches above
+  // instead of replacing them, because anthropic and gemini speak other shapes
+  // and groq's error strings are already relied on elsewhere.
+  const compat = AI_CLOUD_PROVIDERS.find(p => p.id === providerId && p.api === 'openai' && p.baseUrl);
+  if (compat) {
+    const res = await fetch(`${compat.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({
+        model: compat.model,
+        max_tokens: 2000,
+        messages: [{ role: 'system', content: systemPrompt }, ...messages],
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      if (res.status === 401 || res.status === 403)
+        throw new Error(`Invalid ${compat.title.split(' ')[0]} key. Update it via 🤖 AI.`);
+      if (res.status === 402)
+        throw new Error(`${compat.title.split(' ')[0]} reports no credit on this key.`);
+      if (res.status === 404)
+        throw new Error(`${compat.title.split(' ')[0]} model ${compat.model} is unavailable — it may have been retired.`);
+      throw new Error(`${compat.title.split(' ')[0]} ${res.status}: ${body.slice(0, 200)}`);
     }
     const data = await res.json();
     return data?.choices?.[0]?.message?.content || '';
