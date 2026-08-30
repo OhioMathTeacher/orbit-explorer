@@ -9,7 +9,7 @@
   <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
-      var BUILD = '1788059122-r11';
+      var BUILD = '1788059180-r12';
       // Published so the version stamp in the canvas corner can show it. The
       // cache-buster is already the one string that changes on every deploy, so
       // reusing it means the stamp cannot drift out of step with what was shipped.
@@ -262,9 +262,12 @@ const CHAT_PANEL_MAX_WIDTH = 720;
 // Shown in the About panel and stamped faintly in the canvas corner. "v2" was the
 // March 2026 release; 2.1 marked the August 2026 work (three retired cloud models
 // repointed, honest error text); 2.2 is the session recorder, the seeded layout, and
-// the grid-highlight fix. One constant, so the number on screen and the number you
-// would cite agree.
-const APP_VERSION = '2.3';
+// the grid-highlight fix; 2.3 is read-only replay of a recorded session; 2.3.1 opens
+// a replay at the first action rather than the last. Patch releases stay in the 2.3
+// line on purpose — instructions already sent out say the corner "should read 2.3",
+// and 2.3.x still satisfies that. One constant, so the number on screen and the
+// number you would cite agree.
+const APP_VERSION = '2.3.1';
 // The canonical repo. The title used to link to orbit-explorer-classroom, which
 // was promoted into this one on 13 May 2026 and is now private and superseded --
 // so clicking the app name landed on a stale README describing this repo as
