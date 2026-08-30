@@ -835,9 +835,7 @@ function App() {
     !urlKey && !localStorage.getItem(CHAT_KEY_STORAGE) && !localStorage.getItem('openrouter_key')
   );
   const [inputVal, setInputVal] = useState('');
-  const [ghToken, setGhToken] = useState(() => localStorage.getItem('gh_token') || '');
   const [showGhInput, setShowGhInput] = useState(false);
-  const [ghSaveStatus, setGhSaveStatus] = useState(null); // null | 'saving' | 'saved' | 'error'
   const [log, setLog]       = useState([]);
 
   // Physics state lives in refs — no React re-render needed each frame
@@ -914,16 +912,6 @@ function App() {
     setShowKeyInput(true);
   }
 
-  async function saveToGitHub(filename, content) {
-    try {
-      const encoded = btoa(unescape(encodeURIComponent(content)));
-      const res = await fetch(
-        `https://api.github.com/repos/OhioMathTeacher/orbit-explorer/contents/Orbit%20Data/${encodeURIComponent(filename)}`,
-        {
-          method: 'PUT',
-          headers: { 'Authorization': `token ${ghToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: `Data submission ${filename}`, content: encoded }),
-        }
       );
       return res.ok;
     } catch { return false; }
@@ -973,14 +961,6 @@ function App() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    // Save to GitHub if token is configured
-    if (ghToken) {
-      const filename = `orbit-explorer-${now.toISOString().slice(0,19).replace(/:/g,'-')}.txt`;
-      setGhSaveStatus('saving');
-      const ok = await saveToGitHub(filename, transcript);
-      setGhSaveStatus(ok ? 'saved' : 'error');
-      setTimeout(() => setGhSaveStatus(null), 4000);
-    }
   }
 
   async function sendChat() {
