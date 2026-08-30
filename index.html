@@ -9,7 +9,7 @@
   <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
-      var BUILD = '1788050189-r9';
+      var BUILD = '1788051213-r10';
       // Published so the version stamp in the canvas corner can show it. The
       // cache-buster is already the one string that changes on every deploy, so
       // reusing it means the stamp cannot drift out of step with what was shipped.
@@ -264,7 +264,7 @@ const CHAT_PANEL_MAX_WIDTH = 720;
 // repointed, honest error text); 2.2 is the session recorder, the seeded layout, and
 // the grid-highlight fix. One constant, so the number on screen and the number you
 // would cite agree.
-const APP_VERSION = '2.2';
+const APP_VERSION = '2.3';
 // The canonical repo. The title used to link to orbit-explorer-classroom, which
 // was promoted into this one on 13 May 2026 and is now private and superseded --
 // so clicking the app name landed on a stale README describing this repo as
@@ -1737,19 +1737,26 @@ const Recorder = {
   // trajectory on the canvas (Revision 4), and a parameter change resets the graph —
   // so the live picture is one trajectory at most, and reconstruction only has to
   // find the parameters in force and the seed that survived them.
-  stateAt(k) {
+  // `events` defaults to the live recording, but replay passes a loaded file's
+  // array — the reconstruction rule is identical either way, and there is no
+  // reason for the researcher's playback to run different logic from the app's own.
+  stateAt(k, events) {
+    events = events || this.events;
     // Defaults must match the useState initialisers in App. A session that never
     // touched a control records nothing for it, so the default IS the recorded value.
     const st = {
-      m: 3, a: -1, d: 2, seed: null,
+      m: 3, b: -1, d: 2, seed: null,
       steps: 50, layout: 'spread', primes: false, stepnums: false,
       cw: null, ch: null, pins: {},
     };
-    for (let i = 0; i < k && i < this.events.length; i++) {
-      const e = this.events[i];
+    for (let i = 0; i < k && i < events.length; i++) {
+      const e = events[i];
       switch (e.type) {
         // A parameter change resets the canvas, so it drops the seed and any pins.
-        case 'param':    st[e.which] = e.value; st.seed = null; st.pins = {}; break;
+        // 'a' is accepted as a synonym for 'b': sessions recorded before the rename
+        // still replay rather than silently reconstructing the wrong parameter.
+        case 'param':    st[e.which === 'a' ? 'b' : e.which] = e.value;
+                         st.seed = null; st.pins = {}; break;
         case 'seed':     st.seed = e.value; st.pins = {};
                          if (e.cw) { st.cw = e.cw; st.ch = e.ch; } break;
         case 'reset':    st.seed = null; st.pins = {}; break;
@@ -1768,6 +1775,7 @@ const Recorder = {
   describe(e) {
     switch (e.type) {
       case 'param': return `set ${e.which === 'a' ? 'b' : e.which} = ${e.value}`;
+      case 'panel': return `${e.open ? 'opened' : 'closed'} the ${e.which === 'ai' ? 'AI' : 'reference grid'} panel`;
       case 'seed':  return `explored ${e.value} → ${OUTCOME_LABEL[e.outcome] || e.outcome} (${e.steps} steps)`;
       case 'ask':   return `asked: ${e.text.length > 60 ? e.text.slice(0, 60) + '…' : e.text}`;
       case 'reply': return `AI replied (${e.word_count} words${e.elapsed_ms != null ? `, ${(e.elapsed_ms / 1000).toFixed(1)}s` : ''})`;
@@ -1913,6 +1921,11 @@ function App() {
   const [showDataGrids, setShowDataGrids] = useState(false); // the Grid box now hides the Data Reference Grids
   const [aiOpen, setAiOpen] = useState(false);               // AI chat drawer, shut until AI Setup is opened
   const [drawerEdgeHover, setDrawerEdgeHover] = useState(false); // the drawer handle lights up under the cursor
+  const stepsRecordTimerRef = useRef(null);  // debounces max-steps so typing is one event
+  const [replay, setReplay] = useState(null);   // {session, k, name} while playing a file back
+  const sizeOverrideRef = useRef(null);         // canvas size to build at during replay
+  const replayStateRef = useRef(null);          // reconstructed state the rebuild effect reads
+  const sessionFileRef = useRef(null);          // the hidden file input
   const [layoutMode, setLayoutMode] = useState('spread');
   const [colorPrimes, setColorPrimes] = useState(false);
   const [useLightTheme, setUseLightTheme] = useState(false);
@@ -2275,6 +2288,72 @@ function App() {
      the point — what she did and what she said about it, in one file.
 
      layout_seed is here so a replay redraws the same picture, not just the same maths. */
+  /* ── Replay ─────────────────────────────────────────────────────────────────
+     Read-only playback of a recorded session. The reconstruction rule is the app's
+     own — Recorder.stateAt() — run over the loaded file's events instead of the live
+     ones, so playback cannot drift from how the recording was meant to be read.
+
+     Nothing here calls Recorder.record(): replay drives the setters directly rather
+     than going through changeParam/addNumberVal, so watching a session never writes
+     to one. That is also why the parameters are applied as state and the graph is
+     rebuilt in an effect — the setters are async, and building the graph inline would
+     use the previous scrub position's values. */
+  function applyReplayState(session, k) {
+    const st = Recorder.stateAt(k, session.events);
+    // Same seed, same scatter. Without this the maths replays and the picture does not.
+    Layout.reseed((session.layout_seed ?? 1) >>> 0);
+    sizeOverrideRef.current = (st.cw && st.ch) ? { w: st.cw, h: st.ch } : null;
+    replayStateRef.current = st;
+    setM(st.m); setA(st.b); setD(st.d);
+    setMaxVisibleSteps(st.steps);
+    setLayoutMode(st.layout);
+    setColorPrimes(st.primes);
+    setShowStepNumbers(st.stepnums);
+  }
+
+  function replayTo(k) {
+    if (!replay) return;
+    const n = replay.session.events.length;
+    const clamped = Math.max(0, Math.min(n, k));
+    applyReplayState(replay.session, clamped);
+    setReplay(r => ({ ...r, k: clamped }));
+  }
+
+  function loadSessionFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let session;
+      try {
+        session = JSON.parse(reader.result);
+      } catch (err) {
+        window.alert('That file is not valid JSON.');
+        return;
+      }
+      if (!session || !Array.isArray(session.events)) {
+        window.alert('That does not look like an Orbit Explorer session file — no events array.');
+        return;
+      }
+      const n = session.events.length;
+      applyReplayState(session, n);
+      setReplay({ session, k: n, name: file.name });
+      setShowDataTable(false);
+    };
+    reader.readAsText(file);
+  }
+
+  function exitReplay() {
+    setReplay(null);
+    replayStateRef.current = null;
+    sizeOverrideRef.current = null;
+    // A fresh scatter for live use, so the researcher's own exploring does not
+    // continue from the student's seed position.
+    Layout.reseed((Date.now() ^ 0x9E3779B9) >>> 0);
+    sequencesRef.current = [];
+    clearGraph();
+    setVisitedNums(new Set());
+  }
+
   function downloadSessionJson() {
     const now = new Date();
     const turns = [];
@@ -2561,8 +2640,13 @@ function App() {
 
   function rebuildGraphFromSequences() {
     const cvs = canvasRef.current;
-    const W = cvs?.width  ?? 900;
-    const H = cvs?.height ?? 560;
+    // During replay, build at the canvas size recorded in the session rather than
+    // this window's. Node start positions come off W/2 and H/2, so reconstructing at
+    // the researcher's size would place every node somewhere the student never saw.
+    // The view is fitted afterwards, so a different-sized window still shows it whole.
+    const ov = sizeOverrideRef.current;
+    const W = ov ? ov.w : (cvs?.width  ?? 900);
+    const H = ov ? ov.h : (cvs?.height ?? 560);
     
     // Clear existing nodes and edges
     const existingPositions = new Map(nodesRef.current);
@@ -2746,6 +2830,40 @@ function App() {
     dragStateRef.current = null;
     setIsDraggingNode(false);
   }
+
+  /* Rebuilds the graph for the current scrub position. In an effect, not inline in
+     replayTo(), because m/b/d and maxVisibleSteps are React state: reading them
+     immediately after setting them gives the PREVIOUS scrub position's values, and
+     the graph would trail the slider by one step. */
+  useEffect(() => {
+    if (!replay) return;
+    const st = replayStateRef.current;
+    if (!st) return;
+    clearGraph();
+    sequencesRef.current = [];
+    const visited = new Set();
+    if (st.seed != null) {
+      const { seq, outcome, cycleAt, maxValue } = computeSeq(st.seed, st.m, st.b, st.d);
+      sequencesRef.current = [{ seq, outcome, cycleAt, maxValue, startVal: st.seed,
+                               m: st.m, a: st.b, d: st.d }];
+      for (const v of seq) {
+        if (Number.isSafeInteger(v) && v >= 1 && v <= MAX_VAL) visited.add(v);
+      }
+    }
+    rebuildGraphFromSequences();
+    // Nodes the student dragged go back where they dropped them, pinned, so the
+    // force layout does not quietly undo their arrangement.
+    for (const key of Object.keys(st.pins || {})) {
+      const node = nodesRef.current.get(Number(key));
+      if (node) {
+        node.x = st.pins[key].x; node.y = st.pins[key].y;
+        node.pinned = true; node.vx = 0; node.vy = 0;
+      }
+    }
+    setVisitedNums(visited);
+    const fit = setTimeout(fitToCanvas, 280);
+    return () => clearTimeout(fit);
+  }, [replay ? replay.k : null, m, a, d, maxVisibleSteps, layoutMode]);
 
   function getCanvasPoint(event) {
     const canvas = canvasRef.current;
@@ -2987,7 +3105,7 @@ function App() {
     // Recorded with its outcome, so the timeline reads as reasoning rather than as
     // a list of numbers: which seed, under which parameters, and what it did.
     Recorder.record('seed', {
-      value: val, outcome, steps: seq.length - 1, maxValue, m, a, d,
+      value: val, outcome, steps: seq.length - 1, maxValue, m, b: a, d,
       // Node start positions come off W/2 and H/2, so the canvas size is part of
       // what determines the picture. Replay reconstructs at the recorded size and
       // then fits, which keeps playback honest on a different-sized window.
@@ -3078,7 +3196,7 @@ function App() {
         <div style={{ display: 'flex', gap: 22, alignItems: 'center', flexWrap: 'wrap' }}>
           {[
             ['m', 'm', PARAM_COLORS.m, m, v => changeParam('m', setM, v), 1, 9],
-            ['a', 'b', PARAM_COLORS.a, a, v => changeParam('a', setA, v), -9, 9],
+            ['a', 'b', PARAM_COLORS.a, a, v => changeParam('b', setA, v), -9, 9],
             ['d', 'd', PARAM_COLORS.d, d, v => changeParam('d', setD, v), 2, 9],
           ].map(([key, label, color, val, setter, min, max]) => (
             <label key={label} style={{ fontSize: 17, display: 'flex', gap: 8, alignItems: 'center', color }}>
@@ -3115,7 +3233,11 @@ function App() {
                 onChange={e => {
                   const val = parseInt(e.target.value, 10);
                   if (!isNaN(val) && val > 0 && val <= 9999) {
-                    Recorder.record('steps', { value: val });
+                    // Debounced: this fires on every keystroke, so recording it raw
+                    // turned one decision into an event per digit.
+                    clearTimeout(stepsRecordTimerRef.current);
+                    stepsRecordTimerRef.current = setTimeout(
+                      () => Recorder.record('steps', { value: val }), 700);
                     setMaxVisibleSteps(val);
                   }
                 }}
@@ -3638,7 +3760,10 @@ function App() {
             <input
               type="checkbox"
               checked={showDataGrids}
-              onChange={e => { setShowDataGrids(e.target.checked); recenterAfterLayout(); }}
+              onChange={e => {
+                Recorder.record('panel', { which: 'grids', open: e.target.checked });
+                setShowDataGrids(e.target.checked); recenterAfterLayout();
+              }}
             />
             {t('grid')}
           </label>
@@ -3731,6 +3856,19 @@ function App() {
                     cursor: 'pointer',
                   }}>
                   🎞 Download Session
+                </button>
+                {/* Load a recorded session and watch it back. Sits with the exports
+                    because this whole corner is the researcher's, not the student's. */}
+                <button
+                  onPointerDown={e => e.stopPropagation()}
+                  onClick={() => sessionFileRef.current && sessionFileRef.current.click()}
+                  title="Load a saved session file and replay it"
+                  style={{
+                    background: 'linear-gradient(135deg, #5b3f8a 0%, #8161bd 100%)',
+                    border: 'none', color: 'white', borderRadius: 4,
+                    padding: '4px 12px', fontSize: 11, fontWeight: 'bold', cursor: 'pointer',
+                  }}>
+                  ▶ Replay Session
                 </button>
                 <button
                   onPointerDown={e => e.stopPropagation()}
@@ -3880,7 +4018,7 @@ function App() {
               full-height handle wide enough to hit without aiming, with a grip and a
               hover state so it reads as something you can take hold of. */}
           <div
-            onClick={() => setAiOpen(o => !o)}
+            onClick={() => setAiOpen(o => { Recorder.record('panel', { which: 'ai', open: !o }); return !o; })}
             onMouseEnter={() => setDrawerEdgeHover(true)}
             onMouseLeave={() => setDrawerEdgeHover(false)}
             title={aiOpen ? t('aiDrawerClose') : t('aiDrawerOpen')}
@@ -4279,6 +4417,92 @@ function App() {
           </div>
         </div>
       </div>
+
+      {/* The file picker for Replay Session. Hidden; the styled button clicks it.
+          Value is cleared on every change so re-loading the SAME file still fires. */}
+      <input
+        ref={sessionFileRef}
+        type="file"
+        accept="application/json,.json"
+        style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; loadSessionFile(f); }}
+      />
+
+      {/* ── Replay bar ──────────────────────────────────────────────────────────
+          Only mounted while a session is loaded. Deliberately a full-width bar
+          rather than a floating panel: playback is a mode, and it should be
+          obvious at a glance that what is on the canvas is a recording and not
+          your own work. */}
+      {replay && (() => {
+        const evs = replay.session.events;
+        const cur = replay.k > 0 ? evs[replay.k - 1] : null;
+        const secs = cur ? (cur.t / 1000).toFixed(1) + 's' : '0.0s';
+        // The conversation up to this moment — the last exchange, so the reader can
+        // see what was being said while the graph looked like this.
+        const said = [];
+        for (let i = 0; i < replay.k && i < evs.length; i++) {
+          if (evs[i].type === 'ask' || evs[i].type === 'reply') said.push(evs[i]);
+        }
+        const lastTurns = said.slice(-2);
+        const app = replay.session.app || {};
+        return (
+          <div style={{
+            position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 60,
+            background: uiTheme.panelBg, borderTop: `2px solid #8161bd`,
+            padding: '8px 14px 10px', color: uiTheme.textPrimary,
+            fontSize: 12, boxShadow: '0 -4px 18px rgba(0,0,0,0.45)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <strong style={{ color: '#b79ce8' }}>▶ REPLAY</strong>
+              <span style={{ color: uiTheme.textSecondary, maxWidth: 260, overflow: 'hidden',
+                             textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{replay.name}</span>
+              <span style={{ color: uiTheme.textSecondary }}>
+                {replay.k} / {evs.length} · {secs}
+                {app.version ? ` · recorded on v${app.version}` : ''}
+              </span>
+              <span style={{ flex: 1 }} />
+              <button onClick={() => replayTo(replay.k - 1)} disabled={replay.k <= 0}
+                style={{ background: 'transparent', border: `1px solid ${uiTheme.border}`,
+                         color: uiTheme.textPrimary, borderRadius: 4, padding: '3px 10px',
+                         cursor: replay.k <= 0 ? 'default' : 'pointer', fontSize: 13 }}>‹ prev</button>
+              <button onClick={() => replayTo(replay.k + 1)} disabled={replay.k >= evs.length}
+                style={{ background: 'transparent', border: `1px solid ${uiTheme.border}`,
+                         color: uiTheme.textPrimary, borderRadius: 4, padding: '3px 10px',
+                         cursor: replay.k >= evs.length ? 'default' : 'pointer', fontSize: 13 }}>next ›</button>
+              <button onClick={exitReplay}
+                style={{ background: '#7a2f2f', border: 'none', color: 'white',
+                         borderRadius: 4, padding: '4px 12px', cursor: 'pointer',
+                         fontSize: 12, fontWeight: 'bold' }}>Exit replay</button>
+            </div>
+
+            <input
+              type="range" min={0} max={evs.length} step={1} value={replay.k}
+              onChange={e => replayTo(parseInt(e.target.value, 10))}
+              style={{ width: '100%', marginTop: 8, accentColor: '#8161bd' }}
+            />
+
+            <div style={{ marginTop: 4, minHeight: 18 }}>
+              {cur
+                ? <span><strong style={{ color: '#b79ce8' }}>{Recorder.describe(cur)}</strong></span>
+                : <span style={{ color: uiTheme.textSecondary }}>start of session — nothing explored yet</span>}
+            </div>
+
+            {lastTurns.length > 0 && (
+              <div style={{ marginTop: 4, maxHeight: 74, overflowY: 'auto',
+                            borderTop: `1px solid ${uiTheme.border}`, paddingTop: 4 }}>
+                {lastTurns.map((turn, i) => (
+                  <div key={i} style={{ marginBottom: 2 }}>
+                    <span style={{ color: turn.type === 'ask' ? '#7fd18a' : '#e8b45f', fontWeight: 'bold' }}>
+                      {turn.type === 'ask' ? 'student' : 'AI'}:
+                    </span>{' '}
+                    <span style={{ color: uiTheme.textSecondary }}>{turn.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
