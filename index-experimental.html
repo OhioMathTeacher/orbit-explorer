@@ -912,11 +912,6 @@ function App() {
     setShowKeyInput(true);
   }
 
-      );
-      return res.ok;
-    } catch { return false; }
-  }
-
   async function downloadChatTranscript() {
     const now = new Date();
     const timestamp = now.toISOString().replace('T', ' ').substring(0, 19);
