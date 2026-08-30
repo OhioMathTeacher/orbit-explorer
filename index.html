@@ -9,7 +9,7 @@
   <title>Orbit Explorer</title>
   <script>
     (function forceFreshLoad() {
-      var BUILD = '1788051213-r10';
+      var BUILD = '1788059122-r11';
       // Published so the version stamp in the canvas corner can show it. The
       // cache-buster is already the one string that changes on every deploy, so
       // reusing it means the stamp cannot drift out of step with what was shipped.
@@ -2334,9 +2334,14 @@ function App() {
         window.alert('That does not look like an Orbit Explorer session file — no events array.');
         return;
       }
+      // Open at the first action, not the last. A replay is something you watch
+      // forwards; landing on the final state means every session opens on its own
+      // ending. Step 1 rather than 0 so there is something on the canvas straight
+      // away instead of an empty one — 0 is still reachable by scrubbing left.
       const n = session.events.length;
-      applyReplayState(session, n);
-      setReplay({ session, k: n, name: file.name });
+      const start = Math.min(1, n);
+      applyReplayState(session, start);
+      setReplay({ session, k: start, name: file.name });
       setShowDataTable(false);
     };
     reader.readAsText(file);
