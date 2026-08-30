@@ -3624,9 +3624,10 @@ function App() {
               )}
               {wgpu.phase === 'lib' && <p>Loading the in-page model runner…</p>}
               {wgpu.phase === 'nogpu' && (
-                <p>This browser cannot run a model in the page. WebGPU is needed and this browser does
-                   not offer it — use one of the other tabs, or open this page in an up-to-date Chrome,
-                   Edge or Safari.</p>
+                <p>This browser did not offer a graphics device to run a model on. That can mean the
+                   browser has no WebGPU at all, or that it has it but cannot reach your graphics card
+                   — common on Linux, where Chromium often ships with Vulkan switched off. Use one of
+                   the other tabs, or open this page in an up-to-date Chrome, Edge or Safari.</p>
               )}
               {wgpu.phase === 'liberr' && (
                 <p>The model runner could not be loaded{wgpu.note ? `: ${wgpu.note}` : '.'} Use one of
